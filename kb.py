@@ -1,0 +1,573 @@
+"""База знаний: чтение ZIP/папки, санитизация встроенных инструкций, метаданные документов компании,
+разбор законов по пунктам, связанные документы."""
+
+from __future__ import annotations
+
+import io
+import re
+import zipfile
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+from config import CHUNK_MAX, DATA_DIR, log
+from textproc import CODE_RE, STEMMER, STOPWORDS, WORD_RE, norm, tokenize
+from dates import fmt_date, mkdate
+
+
+@dataclass
+class Doc:
+    idx: int
+    path: str
+    kind: str                  # "company" | "law"
+    label: str                 # название для ссылки
+    title: str
+    text: str                  # очищенный текст
+    status: str = ""
+    valid_from: date | None = None
+    valid_to: date | None = None
+    lost_force: date | None = None
+    export_date: str = ""
+    art_notes: list = field(default_factory=list)
+    removed: list = field(default_factory=list)
+    body: str = ""             # для закона: текст статьи без служебной шапки, с пометками редакции
+    search_extra: str = ""     # заголовок для поиска (с главой НК), если отличается от показываемого
+
+
+@dataclass
+class Chunk:
+    idx: int
+    doc: int
+    label: str
+    text: str
+    order: int
+    search: str = ""
+
+
+def decode_bytes(raw: bytes) -> str:
+    for enc in ("utf-8-sig", "cp1251"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def read_docx(raw: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(raw)) as doc:
+        xml = doc.read("word/document.xml")
+    root = ET.fromstring(xml)
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    return "\n".join("".join(x.text or "" for x in p.iter(ns + "t")) for p in root.iter(ns + "p"))
+
+
+def zip_entry_name(info: zipfile.ZipInfo) -> str:
+    name = info.filename
+    if not info.flag_bits & 0x800:  # имя не помечено как UTF-8 (архивы с macOS/Windows)
+        try:
+            name = name.encode("cp437").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return name
+
+
+def candidate_roots() -> list[Path]:
+    roots = [DATA_DIR, Path(__file__).resolve().parent / DATA_DIR, Path.cwd() / "data", Path.cwd()]
+    seen, out = set(), []
+    for r in roots:
+        key = str(r.resolve()) if r.exists() else str(r)
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
+
+
+def find_questions() -> Path:
+    for root in candidate_roots():
+        p = root / "questions.csv"
+        if p.is_file():
+            return p
+    raise FileNotFoundError("Не найден questions.csv")
+
+
+def find_kb() -> Path | None:
+    zips = ("knowledge-base.zip", "knowledge_base.zip", "kb.zip")
+    dirs = ("knowledge-base", "knowledge_base", "kb")
+    for root in candidate_roots():
+        for name in zips:
+            if (root / name).is_file():
+                return root / name
+        for name in dirs:
+            if (root / name).is_dir():
+                return root / name
+    for root in candidate_roots():
+        if root.is_dir():
+            found = sorted(root.glob("*.zip"))
+            if len(found) == 1:
+                return found[0]
+    return None
+
+
+def junk_path(name: str) -> bool:
+    parts = [p for p in name.replace("\\", "/").split("/") if p]
+    return any(p.startswith(".") or p == "__MACOSX" or p.startswith("~$") for p in parts)
+
+
+def iter_kb_files(path: Path):
+    if path.is_dir():
+        for p in sorted(path.rglob("*")):
+            rel = str(p.relative_to(path))
+            if p.is_file() and not junk_path(rel):
+                yield rel, p.read_bytes()
+        return
+    with zipfile.ZipFile(path) as archive:
+        for info in sorted(archive.infolist(), key=lambda i: zip_entry_name(i)):
+            name = zip_entry_name(info)
+            if info.is_dir() or junk_path(name):
+                continue
+            yield name, archive.read(info)
+
+
+def load_raw_docs() -> list[tuple[str, str]]:
+    kb = find_kb()
+    if kb is None:
+        log("ВНИМАНИЕ: база знаний не найдена")
+        return []
+    docs = []
+    for name, raw in iter_kb_files(kb):
+        suffix = Path(name).suffix.lower()
+        try:
+            if suffix in (".txt", ".md", ".csv"):
+                if b"\x00" in raw[:4096]:
+                    log(f"Пропущен бинарный файл: {name}")
+                    continue
+                text = decode_bytes(raw)
+            elif suffix == ".docx":
+                text = read_docx(raw)
+            else:
+                log(f"Пропущен файл неподдерживаемого формата: {name}")
+                continue
+        except Exception as exc:  # noqa: BLE001
+            log(f"Пропущен нечитаемый файл {name}: {type(exc).__name__}")
+            continue
+        text = text.replace("\r\n", "\n").replace("\r", "\n").replace(" ", " ")
+        if text.strip():
+            docs.append((name, text))
+    log(f"База знаний: {kb.name}, документов: {len(docs)}")
+    return docs
+
+
+INJ_DIRECT = re.compile(
+    r"(?i)(ии[-\s]?ассистент|ai[-\s]?assistant|для\s+(?:ии|ai|нейросет\w*|языков\w+\s+модел\w*|чат-?бот\w*|"
+    r"ассистент\w*|модел\w+)\b|ignore\s+(?:all|previous|prior|the)|игнорируй\s|не\s+упоминай\s+(?:эту|данн\w+|"
+    r"настоящ\w+)\s+инструкц|system\s+prompt|системн\w+\s+промпт)")
+INJ_WHO = re.compile(r"(?i)(\bии\b|нейросет|языков\w*\s+модел|\bllm\b|chatgpt|\bgpt\b|ассистент|assistant|\bai\b)")
+INJ_DO = re.compile(r"(?i)(игнорир|ignore|не\s+упомина|забудь|отвечай|всегда\s+отвеча|инструкци|промпт|prompt)")
+INJ_MARK = "[Фрагмент удалён: встроенная инструкция для ИИ, не является положением документа]"
+
+
+def sanitize(text: str) -> tuple[str, list[str]]:
+    out, removed = [], []
+    for line in text.split("\n"):
+        if INJ_DIRECT.search(line) or (INJ_WHO.search(line) and INJ_DO.search(line)):
+            removed.append(line.strip())
+            out.append(INJ_MARK)
+        else:
+            out.append(line)
+    return "\n".join(out), removed
+
+
+def label_from_path(path: str) -> str:
+    stem = Path(path).stem
+    if "__" in stem:
+        stem = stem.split("__", 1)[1]
+    return re.sub(r"\s+", " ", stem.replace("_", " ")).strip()
+
+
+def is_law(path: str, text: str) -> bool:
+    p = norm(path)
+    if any(k in p for k in ("закон", "кодекс", "законодат", "/law", "laws")) or p.startswith("law"):
+        return True
+    head = text[:800]
+    return bool(re.search(r"^Источник:.*(?:кодекс|Федеральн\w+ закон|КоАП|ТК РФ|НК РФ|ГК РФ)", head, re.M | re.I))
+
+
+TITLE_KEYS = re.compile(r"(ДОГОВОР|СОГЛАШЕНИЕ|РЕГЛАМЕНТ|ПИСЬМО|ЗАПИСКА|ПРИКАЗ|ПОЛОЖЕНИЕ|ИНСТРУКЦИЯ|ПОЛИТИКА|"
+                        r"ПОРЯДОК|ПРАВИЛА|Исх\.)")
+
+
+def company_meta(doc: Doc) -> None:
+    lines = [ln.strip() for ln in doc.text.split("\n") if ln.strip()]
+    title = next((ln for ln in lines[:8] if TITLE_KEYS.search(ln)), lines[0] if lines else doc.label)
+    doc.title = title[:200]
+    head = doc.text[:700]
+    m = re.search(r"утратил\w*\s+сил\w*\s+с\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", head, re.I)
+    if m:
+        doc.lost_force = mkdate(*m.groups())
+        if doc.lost_force:
+            doc.valid_to = doc.lost_force - timedelta(days=1)
+    m = re.search(r"(?:Действует|вступает в силу|применяется)\s+с\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", head, re.I)
+    if m:
+        doc.valid_from = mkdate(*m.groups())
+    if not doc.valid_from:
+        m = re.search(r"Редакция\s+от\s+(\d{1,2})\.(\d{1,2})\.(\d{4})", head, re.I)
+        if m:
+            doc.valid_from = mkdate(*m.groups())
+    parts = []
+    if doc.lost_force:
+        parts.append(f"УТРАТИЛ СИЛУ с {fmt_date(doc.lost_force)}")
+        if doc.valid_from:
+            parts.append(f"действовал с {fmt_date(doc.valid_from)} по {fmt_date(doc.valid_to)}")
+    elif "утратил" in norm(doc.label):
+        parts.append("утратил силу")
+    elif doc.valid_from and re.search(r"редакц|регламент|положени|политик|порядок|правил", norm(doc.label + doc.title)):
+        parts.append(f"действующая редакция, действует с {fmt_date(doc.valid_from)}")
+    doc.status = "; ".join(parts)
+
+
+def company_chunks(doc: Doc, start_idx: int) -> list[Chunk]:
+    """Фрагменты документа компании для поиска и запасного ответа (в контекст идёт весь документ)."""
+    chunks, buf, order = [], [], 0
+    section = ""
+
+    def flush():
+        nonlocal buf, order
+        if buf:
+            body = "\n".join(buf)
+            nums = re.findall(r"^(\d+(?:\.\d+)+)\.", body, re.M)
+            lab = doc.label + (f", п. {nums[0]}" + (f"–{nums[-1]}" if len(nums) > 1 else "") if nums else "")
+            text = (section + "\n" if section and not body.startswith(section) else "") + body
+            chunks.append(Chunk(start_idx + len(chunks), doc.idx, lab, text, order))
+            order += 1
+            buf = []
+
+    for line in doc.text.split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        if re.match(r"^\d+\.\s+[А-ЯЁA-Z]", s) and len(s) < 90:
+            flush()
+            section = s
+            buf.append(s)
+            continue
+        if sum(len(x) for x in buf) + len(s) > 900:
+            flush()
+        buf.append(s)
+    flush()
+    return chunks
+
+
+NOTE_RE = re.compile(
+    r"^(?:(?:Пункт|Подпункт|Часть|Части|Статья|Абзац|Примечани\w*|Наименование|Раздел|Глава)\s+[\w.,()\s-]{0,40}?"
+    r"(?:изменен|изложен|дополнен|утратил|признан|приостановлен|вступа|не применя)|Положения\s+(?:пункта|подпункта|"
+    r"части|статьи|абзаца)|Федеральн\w+\s+закон\w*\s+от\s+\d|О\s+(?:конституционно|проверке|применении|порядке)|"
+    r"См\.\s|Информация об изменениях|[CС]рок давности привлечения)", re.I)
+POINT_RE = re.compile(r"^(\d+(?:\.\d+)*(?:-\d+)?)\.\s+\S")
+SUB_RE = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)\)\s*\S")
+HEADING_RE = re.compile(r"^Статья\s+(\d+(?:\.\d+)*)\.\s*(.*)$")
+
+
+def law_act(source: str, path: str) -> str:
+    s = source
+    if re.search(r"Трудов\w+\s+кодекс|ТК РФ", s):
+        return "ТК РФ"
+    if re.search(r"Налогов\w+\s+кодекс|НК РФ", s):
+        return "НК РФ"
+    if re.search(r"административных правонарушениях|КоАП", s):
+        return "КоАП РФ"
+    if re.search(r"Гражданск\w+\s+кодекс|ГК РФ", s):
+        return "ГК РФ"
+    m = re.search(r"Федеральн\w+\s+закон\w*\s+от\s+([\d.]+)\s+(?:N|№)\s*(\d+-ФЗ)\s*[\"«]([^\"»]+)[\"»]", s)
+    if m:
+        return f"Федеральный закон от {m.group(1)} № {m.group(2)} «{m.group(3)}»"
+    m = re.search(r"(\d+-ФЗ)", s + " " + path)
+    if m:
+        return f"Федеральный закон № {m.group(1)}"
+    return label_from_path(path)
+
+
+def _split_sentences(par: str, limit: int) -> list[str]:
+    parts, cur = [], ""
+    for sent in re.split(r"(?<=[.;:])\s+", par):
+        if cur and len(cur) + len(sent) + 1 > limit:
+            parts.append(cur)
+            cur = sent
+        else:
+            cur = (cur + " " + sent).strip()
+    if cur:
+        parts.append(cur)
+    out = []
+    for p in parts:  # совсем длинные «предложения» режем по длине
+        while len(p) > limit * 1.5:
+            out.append(p[:limit])
+            p = p[limit:]
+        out.append(p)
+    return out
+
+
+NK_CHAPTERS = [  # (с, по, тема): тексты статей НК не называют сам налог, без этого поиск по «НДС»/«НДФЛ» не работает
+    (106, 115, "налоговая ответственность, налоговые правонарушения, налоговые санкции, штрафы"),
+    (116, 142, "налоговые правонарушения и ответственность за их совершение"),
+    (143, 178, "налог на добавленную стоимость (НДС), глава 21 НК РФ"),
+    (179, 206, "акцизы, глава 22 НК РФ"),
+    (207, 233, "налог на доходы физических лиц (НДФЛ), глава 23 НК РФ"),
+    (246, 333, "налог на прибыль организаций, глава 25 НК РФ"),
+    (346, 346, "специальные налоговые режимы"),
+]
+
+
+def law_topic(act: str, art_no: str) -> str:
+    if act != "НК РФ" or not art_no:
+        return ""
+    try:
+        n = int(art_no.split(".")[0])
+    except ValueError:
+        return ""
+    for lo, hi, topic in NK_CHAPTERS:
+        if lo <= n <= hi:
+            return topic
+    return ""
+
+
+def split_long(text: str, limit: int) -> list[str]:
+    """Режет по границам абзацев; абзац длиннее лимита — по предложениям."""
+    if len(text) <= limit:
+        return [text]
+    pieces: list[str] = []
+    cur = ""
+    pars: list[str] = []
+    note_buf = ""
+    for par in text.split("\n"):  # пометка редакции не должна оторваться от своего абзаца
+        par = par.strip()
+        if not par:
+            continue
+        if par.startswith("[Пометка редакции:"):
+            note_buf = (note_buf + "\n" + par) if note_buf else par
+            continue
+        pars.append((note_buf + "\n" + par) if note_buf else par)
+        note_buf = ""
+    if note_buf:
+        pars.append(note_buf)
+    for par in pars:
+        if len(par) > limit:
+            if cur:
+                pieces.append(cur)
+                cur = ""
+            pieces.extend(_split_sentences(par, limit))
+            continue
+        if cur and len(cur) + len(par) + 1 > limit:
+            pieces.append(cur)
+            cur = par
+        else:
+            cur = (cur + "\n" + par) if cur else par
+    if cur:
+        pieces.append(cur)
+    return pieces
+
+
+def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
+    lines = doc.text.split("\n")
+    source = ""
+    body = []
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("Источник:"):
+            source = s[len("Источник:"):].strip()
+        elif s.startswith("URL:"):
+            continue
+        elif s.startswith("Дата выгрузки:"):
+            doc.export_date = s.split(":", 1)[1].strip()
+        else:
+            body.append(s)
+    act = law_act(source or doc.label, doc.path)
+    art_no, art_title = "", ""
+    m = re.search(r"Стать[яи]\s+(\d+(?:\.\d+)*)", source)
+    if m:
+        art_no = m.group(1)
+    for s in body:
+        hm = HEADING_RE.match(s)
+        if hm:
+            art_no = art_no or hm.group(1)
+            if len(hm.group(2)) <= 150 and not re.search(r"\d{3}", hm.group(2)):
+                art_title = hm.group(2).strip().rstrip(".")
+            break
+    base = f"{act}, ст. {art_no}" if art_no else act
+    doc.label = base
+    doc.title = f"{base} «{art_title}»" if art_title else base
+    topic = law_topic(act, art_no)
+    if topic:  # номер главы в базе не встречается — модели показываем только название налога
+        doc.search_extra = f"{doc.title} — {topic}"
+        doc.title += f" — {topic.split(', глава')[0]}"
+
+    numbered = sum(1 for s in body if POINT_RE.match(s)) >= 2
+    word = "п." if act.startswith("НК") else "ч."
+
+    # Единицы: (номер пункта/части, номер подпункта, пометки, строки)
+    units: list[dict] = []
+    pending: list[str] = []
+    point = None
+    heading_seen = False
+    cur = None
+    body_out: list[str] = []
+    for s in body:
+        if not s:
+            continue
+        if NOTE_RE.match(s):
+            if not heading_seen:
+                doc.art_notes.append(s)
+            else:
+                pending.append(s)
+                body_out.append(f"[Пометка редакции: {s}]")
+            continue
+        body_out.append(s)
+        if HEADING_RE.match(s):
+            heading_seen = True
+        pm = POINT_RE.match(s) if numbered else None
+        sm = SUB_RE.match(s)
+        if pm:
+            point = pm.group(1)
+            cur = {"point": point, "sub": None, "notes": pending, "lines": [s]}
+            units.append(cur)
+        elif sm and point is not None:
+            cur = {"point": point, "sub": sm.group(1), "notes": pending, "lines": [s]}
+            units.append(cur)
+        elif cur is None or pending:
+            cur = {"point": point, "sub": None, "notes": pending, "lines": [s]}
+            units.append(cur)
+        else:
+            cur["lines"].append(s)
+        pending = []
+    if pending and units:
+        units[-1]["lines"].extend(f"[Пометка редакции: {p}]" for p in pending)
+    doc.body = "\n".join(body_out)
+
+    merged: list[dict] = []  # единица только из заголовка статьи присоединяется к следующей
+    for u in units:
+        if merged and len(merged[-1]["lines"]) == 1 and not merged[-1]["notes"] \
+                and HEADING_RE.match(merged[-1]["lines"][0]) and merged[-1]["point"] == u["point"]:
+            u = {**u, "lines": merged[-1]["lines"] + u["lines"]}
+            merged[-1] = u
+        else:
+            merged.append(u)
+    units = merged
+
+    def unit_text(u: dict) -> str:
+        notes = "".join(f"[Пометка редакции: {n}]\n" for n in u["notes"])
+        return notes + "\n".join(u["lines"])
+
+    chunks: list[Chunk] = []
+    order = 0
+
+    def add(label: str, text: str) -> None:
+        nonlocal order
+        chunks.append(Chunk(start_idx + len(chunks), doc.idx, label, text.strip(), order))
+        order += 1
+
+    # Группируем подряд идущие единицы одного пункта
+    groups: list[tuple[str | None, list[dict]]] = []
+    for u in units:
+        if groups and groups[-1][0] == u["point"]:
+            groups[-1][1].append(u)
+        else:
+            groups.append((u["point"], [u]))
+
+    for point, us in groups:
+        plabel = f"{base}, {word} {point}" if point else base
+        full = "\n".join(unit_text(u) for u in us)
+        if len(full) <= CHUNK_MAX:
+            add(plabel, full)
+            continue
+        intro = us[0]["lines"][0]
+        intro_short = intro if len(intro) <= 220 else intro[:220] + "…"
+        buf: list[dict] = []
+        size = 0
+
+        def flush_buf(first: bool) -> None:
+            if not buf:
+                return
+            subs = [u["sub"] for u in buf if u["sub"]]
+            lab = plabel + (f", пп. {subs[0]}" + (f"–{subs[-1]}" if len(subs) > 1 else "") if subs and point else "")
+            text = "\n".join(unit_text(u) for u in buf)
+            if not first and point:
+                text = f"(продолжение {word} {point}: «{intro_short}»)\n" + text
+            for i, piece in enumerate(split_long(text, CHUNK_MAX)):
+                if i and point:
+                    piece = f"(продолжение {word} {point})\n" + piece
+                add(lab, piece)
+
+        first = True
+        for u in us:
+            t = unit_text(u)
+            if buf and size + len(t) > CHUNK_MAX:
+                flush_buf(first)
+                first = False
+                buf, size = [], 0
+            buf.append(u)
+            size += len(t)
+        flush_buf(first)
+    return chunks
+
+
+@dataclass
+class KB:
+    docs: list[Doc]
+    chunks: list[Chunk]
+
+    @property
+    def company(self) -> list[Doc]:
+        return [d for d in self.docs if d.kind == "company"]
+
+    @property
+    def laws(self) -> list[Doc]:
+        return [d for d in self.docs if d.kind == "law"]
+
+
+def build_kb() -> KB:
+    docs: list[Doc] = []
+    chunks: list[Chunk] = []
+    for path, raw_text in load_raw_docs():
+        text, removed = sanitize(raw_text)
+        kind = "law" if is_law(path, text) else "company"
+        doc = Doc(idx=len(docs), path=path, kind=kind, label=label_from_path(path), title="", text=text.strip(),
+                  removed=removed)
+        if removed:
+            log(f"Удалены встроенные инструкции ({len(removed)}) в документе: {doc.label}")
+        if kind == "company":
+            company_meta(doc)
+            new = company_chunks(doc, len(chunks))
+        else:
+            new = parse_law(doc, len(chunks))
+        docs.append(doc)
+        for c in new:
+            c.search = f"{doc.search_extra or doc.title}. {c.label}. {c.text}"
+        chunks.extend(new)
+    log(f"Документов компании: {sum(d.kind == 'company' for d in docs)}, законов: "
+        f"{sum(d.kind == 'law' for d in docs)}, фрагментов: {len(chunks)}")
+    return KB(docs, chunks)
+
+
+def _title_stems(d: Doc) -> set[str]:
+    words = [w for w in WORD_RE.findall(norm(d.title)) if not w.isdigit() and len(w) > 2 and w not in STOPWORDS]
+    return {STEMMER.stem(w) for w in words}
+
+
+def related_docs(kb: KB, d: Doc) -> list[Doc]:
+    """Связанные документы: доп. соглашение и договор (общий номер), редакции одного документа,
+    документ, который ссылается на другой по названию (письмо К-12 -> Регламент)."""
+    codes_d = set(CODE_RE.findall(norm(d.text[:400])))
+    stems_d = _title_stems(d)
+    out = []
+    for o in kb.company:
+        if o is d:
+            continue
+        codes_o = set(CODE_RE.findall(norm(o.text[:400])))
+        if (codes_d & set(CODE_RE.findall(norm(o.text)))) or (codes_o & set(CODE_RE.findall(norm(d.text)))):
+            out.append(o)
+            continue
+        stems_o = _title_stems(o)
+        if len(stems_d) >= 3 and (stems_d == stems_o or stems_d <= set(tokenize(o.text))):
+            out.append(o)
+        elif len(stems_o) >= 3 and stems_o <= set(tokenize(d.text)):
+            out.append(o)
+    return out
