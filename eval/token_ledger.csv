@@ -23,3 +23,6 @@ ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached
 2026-11-10 18:03:05,10_contract,примеры контракта,deepseek-v4.1-flash,2,17002,266,17268,8448
 2026-11-10 18:05:29,10_contract,примеры контракта,deepseek-v4.1-flash,3,27859,467,28326,8576
 2026-11-10 18:05:56,10_contract,примеры контракта,deepseek-v4.1-flash,4,35442,751,36193,26240
+2026-11-10 21:37:58,dev_smoke,прогон current smoke_sub5_repro,deepseek-v4.1-flash,7,56241,566,56807,0
+2026-11-10 21:38:28,dev_smoke,прогон current smoke_sub5_repro,deepseek-v4.1-flash,11,100650,1138,101788,0
+2026-11-10 21:38:29,dev_smoke,прогон current smoke_sub5_repro,deepseek-v4.1-flash,1,8869,128,8997,0

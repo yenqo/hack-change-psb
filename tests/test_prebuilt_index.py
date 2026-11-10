@@ -83,5 +83,31 @@ class PrebuiltIndexTest(unittest.TestCase):
         self.assertEqual(self.probe_block(res["_stderr"])["kb"]["prebuilt_index"]["reason"], "не совпал kb_sha256")
 
 
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class PrebuiltIndexRobustTest(unittest.TestCase):
+    def test_unexpected_error_falls_back(self) -> None:
+        """Любая неожиданная ошибка при загрузке (например, странный ответ /embeddings) — не исключение, а откат."""
+        import contextlib
+        import io
+        core = harness.load_core()
+        with contextlib.redirect_stderr(io.StringIO()):
+            kb = core.build_kb()
+        idx = core.Index(kb)
+        mod = next(m for m in core._modules if m.__name__ == "index")
+        old_base, old_embed = mod.API_BASE, mod.embed
+
+        def boom(texts):
+            raise ZeroDivisionError("неожиданно")
+        mod.API_BASE, mod.embed = "http://x", boom
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                info = idx.load_prebuilt(path=harness.ROOT / "index_vectors.json")
+        finally:
+            mod.API_BASE, mod.embed = old_base, old_embed
+        self.assertFalse(info["used"])
+        self.assertIn("ZeroDivisionError", info["reason"])
+        self.assertIsNone(idx.vecs)
+
+
 if __name__ == "__main__":
     unittest.main()

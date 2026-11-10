@@ -105,7 +105,13 @@ class Index:
         return {k: v for k, v in data.items() if k != "vectors"}
 
     def load_prebuilt(self, path: Path | None = None, sample: int = 8, min_cos: float = 0.99) -> dict:
-        self.prebuilt = self._load_prebuilt(path, sample, min_cos)
+        """Никогда не бросает исключений: готовый индекс — только ускорение, при любой ошибке — расчёт как в v1.3."""
+        try:
+            self.prebuilt = self._load_prebuilt(path, sample, min_cos)
+        except Exception as exc:  # noqa: BLE001
+            self.vecs = None
+            self.prebuilt = {"found": True, "used": False, "reason": f"ошибка {type(exc).__name__}"}
+            log(f"Готовый индекс не использован: {type(exc).__name__}")
         return self.prebuilt
 
     def _load_prebuilt(self, path: Path | None, sample: int, min_cos: float) -> dict:
