@@ -97,6 +97,7 @@ flowchart LR
 | `SOLUTION_FEWSHOT` | `demo` | `fictional` — few-shot на вымышленных документах (7.6, ждёт замера) |
 | `SOLUTION_FIX_DOCNUM` | — | `1` — номера документов не проверяются как числа (B3, ждёт замера) |
 | `SOLUTION_CHECK_REFS` | — | `1` — проверка номеров пунктов и документов в ответе (7.1, ждёт замера) |
+| `SOLUTION_SOFT_DEGRADE` | `1` | `0` — вернуть реакцию v1.3 на 4xx (B5: разовые 4xx не понижают режим на весь прогон) |
 | `SOLUTION_PREBUILT_INDEX` | `1` | `0` — не использовать готовый индекс `index_vectors.json` (7.2); `SOLUTION_INDEX_FILE` — другой путь к файлу |
 | `SOLUTION_MODE` | `batch` | `web` — режим фасада (ставит сам `assistant.py`) |
 

@@ -112,5 +112,28 @@ class PendingTest(unittest.TestCase):
             self.assertIn("Кедр-Логистик", system)
 
 
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class SoftDegradeTest(unittest.TestCase):
+    """B5: разовые 4xx не понижают уровень на весь прогон; настоящий «слишком велик» — понижает сразу."""
+
+    def run_sc(self, sc: str, soft: bool, **extra) -> dict:
+        env = {"SOLUTION_SOFT_DEGRADE": "1" if soft else "0", **{k: str(v) for k, v in extra.items()}}
+        return golden_runner.run_subprocess("root", sc, env)
+
+    def test_normal_unchanged(self) -> None:
+        self.assertEqual(self.run_sc("normal", True)["answers"], self.run_sc("normal", False)["answers"])
+
+    def test_flaky_keeps_full_level(self) -> None:
+        old = self.run_sc("flaky4xx", False, FAULT_P=0.1, FAULT_SEED=1)["stats"].get("level4", 0)
+        new = self.run_sc("flaky4xx", True, FAULT_P=0.1, FAULT_SEED=1)["stats"].get("level4", 0)
+        self.assertGreaterEqual(new, 15)
+        self.assertGreater(new, old)
+
+    def test_size_error_degrades_at_once(self) -> None:
+        res = self.run_sc("size400", True)
+        self.assertTrue(res["flags"]["compact"])
+        self.assertEqual(res["stats"].get("level4", 0), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,9 +18,11 @@ from runtime import llm_seems_down
 
 
 class APIError(Exception):
-    def __init__(self, msg: str, transient: bool = False) -> None:
+    def __init__(self, msg: str, transient: bool = False, status: int | None = None, detail: str = "") -> None:
         super().__init__(msg)
         self.transient = transient
+        self.status = status      # HTTP-код ответа прокси, если был
+        self.detail = detail      # начало текста ошибки прокси (для отличия «запрос слишком велик» от прочих 4xx)
 
 
 RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524}
@@ -137,7 +139,7 @@ def post_json(path: str, key: str, payload: dict, timeout: float = 90.0, attempt
             elif status in RETRY_STATUS:
                 last = f"HTTP {status}"
             else:
-                raise APIError(f"HTTP {status} {path}", transient=False)
+                raise APIError(f"HTTP {status} {path}", transient=False, status=status, detail=r.text[:300])
         fails += 1
         if fails >= attempts or time.monotonic() - start > max_wait + timeout:
             raise APIError(f"{last} {path}", transient=True)

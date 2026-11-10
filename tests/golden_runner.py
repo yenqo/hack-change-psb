@@ -33,6 +33,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness  # noqa: E402
 
 SCENARIOS = ["normal", "fabricated", "reject_full", "reject_compact", "tiny", "transient", "no_dense"]
+# Сценарии сбоев для проверки устойчивости (B5; без эталонов, только для tools/fault_eval.py и тестов, цель root):
+#   flaky4xx — случайный 400 «прокси перегружен» с вероятностью FAULT_P на каждый вызов чата;
+#   flaky_mix — то же плюс случайные 429 и 503;
+#   size400 — 400 «maximum context length» на полный запрос (настоящий «слишком велик»).
+FAULT_SCENARIOS = ["flaky4xx", "flaky_mix", "size400"]
 
 # Пороги размера запроса для сценариев с отказом 4xx (символы сообщения пользователя).
 # На демо-вопросах полный запрос 21–31 тыс., компактный 10,7–15,5 тыс., минимальный 5,7–8,7 тыс.
@@ -54,6 +59,9 @@ class FakeProxy:
         self.embed_calls: list[str] = []
         self.failed_once: set[str] = set()
         self.rerank_seen = 0
+        import random
+        self.rng = random.Random(int(os.environ.get("FAULT_SEED", "1")))
+        self.fault_p = float(os.environ.get("FAULT_P", "0.1"))
         self.probe_rerank = 0
 
     # -- запись -------------------------------------------------------------
@@ -100,6 +108,17 @@ class FakeProxy:
             raise self._err("HTTP 400 /chat/completions", transient=False)
         if sc == "tiny" and messages[0]["content"] != self.core.SYSTEM_TINY:
             raise self._err("HTTP 413 /chat/completions", transient=False)
+        if sc in ("flaky4xx", "flaky_mix"):
+            x = self.rng.random()
+            if x < self.fault_p:
+                raise self.core.APIError("HTTP 400 /chat/completions", transient=False, status=400,
+                                         detail='{"error": {"message": "upstream overloaded, please retry"}}')
+            if sc == "flaky_mix" and x < 2 * self.fault_p:
+                raise self._err("HTTP 429 /chat/completions" if x < 1.5 * self.fault_p else "HTTP 503 /chat/completions",
+                                transient=True)
+        if sc == "size400" and len(user) > FULL_LIMIT:
+            raise self.core.APIError("HTTP 400 /chat/completions", transient=False, status=400,
+                                     detail='{"error": {"message": "This model\'s maximum context length is 16384 tokens"}}')
         if sc == "transient" and n % 5 in (0, 1) and h not in self.failed_once:
             self.failed_once.add(h)
             raise self._err("HTTP 429 /chat/completions" if n % 5 == 0 else "ReadTimeout /chat/completions",
@@ -223,7 +242,7 @@ def run_subprocess(which: str, scenario: str, env_extra: dict | None = None) -> 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", choices=["root", "baseline"], required=True)
-    ap.add_argument("--scenario", choices=SCENARIOS, required=True)
+    ap.add_argument("--scenario", choices=SCENARIOS + FAULT_SCENARIOS, required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     res = run(args.target, args.scenario)

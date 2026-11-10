@@ -38,6 +38,8 @@ TEST_ENV = {
     "MAX_WORKERS": "1",
     # golden master сравнивает с v1.3 — без готового индекса (его путь проверяет tests/test_prebuilt_index.py)
     "SOLUTION_PREBUILT_INDEX": "0",
+    # и без исправлений устойчивости (B5 и далее): их поведение проверяют tests/test_pending.py и tools/fault_eval.py
+    "SOLUTION_SOFT_DEGRADE": "0",
 }
 PLATFORM_VARS = ["LLM_BASE_URL", "BASE_URL", "OPENAI_BASE_URL", "LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDER_API_KEY",
                  "RERANKER_API_KEY", "LLM_MODEL", "GEN_MODEL", "OPENAI_MODEL", "EMB_MODEL", "RERANKER_MODEL",
@@ -52,7 +54,7 @@ def target() -> str:
 
 
 # Значения TEST_ENV, которые тест может переопределить через окружение подпроцесса
-OVERRIDABLE = {"SOLUTION_PREBUILT_INDEX"}
+OVERRIDABLE = {"SOLUTION_PREBUILT_INDEX", "SOLUTION_SOFT_DEGRADE"}
 
 
 def apply_env(extra: dict | None = None) -> None:

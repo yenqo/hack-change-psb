@@ -21,6 +21,8 @@ class Flags:
         self.compact = False           # прокси отклонил полный запрос — все вопросы в компактном режиме
         self.minimal = False           # прокси отклонил и компактный — минимальный режим
         self.tiny = False              # прокси отклонил и минимальный — запрос размером со стартовый пример
+        self.soft4xx_streak = 0        # B5: вопросов подряд с повторным 4xx (не «слишком велик»)
+        self.degraded_at = -1          # B5: номер завершённого вопроса, когда понизили режим (для повторной пробы)
         self.stats = {"llm_ok": 0, "fallback": 0, "repaired": 0, "trimmed": 0, "rerank_ok": 0,
                       "level4": 0, "level3": 0, "level2": 0, "level1": 0, "skipped": 0}
 

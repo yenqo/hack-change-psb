@@ -10,7 +10,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, DEBUG, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (CHECK_REFS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import expand_query
 from dates import date_note, event_periods
@@ -199,12 +199,66 @@ def answer_tiny(kb: KB, index: Index, prep: Prepared, trace=None, info: dict | N
     return ans
 
 
-def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, trace=None, info: dict | None = None) -> str:
+_SIZE_ERROR = re.compile(r"(?i)context|too long|too large|maximum|max_?tokens|token limit|length|слишком|превыш")
+
+
+def _size_error(exc: APIError) -> bool:
+    """4xx «запрос слишком велик» (413 или упоминание длины контекста в тексте ошибки прокси)."""
+    return exc.status == 413 or bool(_SIZE_ERROR.search(exc.detail or ""))
+
+
+def _maybe_recover() -> None:
+    """B5: режим, пониженный из-за серии прочих 4xx, через 10 вопросов снова пробуем полный."""
+    f = runtime.FLAGS
+    with f.lock:
+        if f.degraded_at >= 0 and (f.compact or f.minimal or f.tiny):
+            with runtime.PROG.lock:
+                done = runtime.PROG.finished
+            if done - f.degraded_at >= 10:
+                f.compact = f.minimal = f.tiny = False
+                f.degraded_at = -1
+                log("Пробуем снова полный режим запроса")
+
+
+def _soft_4xx(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, exc: APIError, trace, info,
+              retried: bool) -> str:
+    """B5: прочий 4xx (не «слишком велик»): повтор того же уровня; не помогло — этот вопрос уровнем ниже;
+    глобально понижаем только после 3 таких вопросов подряд и с последующей повторной пробой."""
+    if not retried:
+        log(f"Прокси отклонил запрос ({exc}) — повторяем тот же уровень")
+        time.sleep(1.0)
+        return answer_one(kb, index, qtext, prep, level, trace, info, _retry=True)
+    f = runtime.FLAGS
+    with f.lock:
+        f.soft4xx_streak += 1
+        if f.soft4xx_streak >= 3:
+            f.soft4xx_streak = 0
+            if level >= 3:
+                f.compact = True
+            elif level == 2:
+                f.minimal = True
+            else:
+                f.tiny = True
+            with runtime.PROG.lock:
+                f.degraded_at = runtime.PROG.finished
+            log(f"Три вопроса подряд с отказом прокси ({exc}) — временно понижаем режим")
+    f.inc("soft4xx")
+    if level >= 3:
+        return answer_one(kb, index, qtext, prep, 2, trace, info)
+    if level == 2:
+        return answer_one(kb, index, qtext, prep, 1, trace, info)
+    return answer_tiny(kb, index, prep, trace, info)
+
+
+def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, trace=None, info: dict | None = None,
+               _retry: bool = False) -> str:
     """trace(stage) — необязательный колбэк этапов (search / generate / verify) для веб-интерфейса;
     info — необязательный словарь, куда кладутся сведения об ответе (уровень, контекст, черновик, проверки).
     Ни то, ни другое на текст ответа не влияет."""
     if trace:
         trace("search")
+    if SOFT_DEGRADE:
+        _maybe_recover()
     if runtime.FLAGS.tiny:
         return answer_tiny(kb, index, prep, trace, info)
     if runtime.FLAGS.minimal:
@@ -224,6 +278,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     try:
         ans = clean_answer(chat(messages))
     except APIError as exc:
+        if SOFT_DEGRADE and not exc.transient and not _size_error(exc):
+            return _soft_4xx(kb, index, qtext, prep, level, exc, trace, info, _retry)
         if not exc.transient and level >= 2:
             # Прокси отклонил запрос (размер или параметры): уменьшаем запрос для всех последующих вопросов.
             with runtime.FLAGS.lock:
@@ -242,6 +298,9 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
             return answer_tiny(kb, index, prep, trace, info)
         raise
     runtime.TIMING.add({4: "chat_full", 3: "chat_full", 2: "chat_compact"}.get(level, "chat_min"), time.monotonic() - t0)
+    if SOFT_DEGRADE and level >= 3:
+        with runtime.FLAGS.lock:
+            runtime.FLAGS.soft4xx_streak = 0
     if not ans:
         raise APIError("пустой ответ после очистки", transient=True)
     draft = ans
