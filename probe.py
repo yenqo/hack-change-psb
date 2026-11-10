@@ -16,7 +16,7 @@ import runtime
 from config import (API_BASE, DATA_DIR, EMB_MODEL, LLM_KEY, LLM_MODEL, MAX_TOKENS, MAX_WORKERS, PROBE, PROBE_RERANK,
     RERANK_KEY,
     RERANKER_MODEL, T0, TEMPERATURE, TIME_BUDGET, env, log, remaining)
-from kb import find_kb
+from kb import find_kb, kb_hash
 from llm import APIError, _chat, post_json
 from pipeline import parse_dialog
 
@@ -77,14 +77,6 @@ def emit(title: str, data: dict) -> None:
     for sec in _secrets():
         text = text.replace(sec, "<скрыто>")
     print(f"=== {title} ===\n{text}\n=== /{title} ===", file=sys.stderr, flush=True)
-
-
-def kb_hash(kb) -> str:
-    """Отпечаток базы: не зависит от того, ZIP это или папка (имена и тексты документов)."""
-    h = hashlib.sha256()
-    for d in sorted(kb.docs, key=lambda d: d.path):
-        h.update(d.path.encode("utf-8") + b"\0" + hashlib.sha256(d.text.encode("utf-8")).digest())
-    return h.hexdigest()
 
 
 def _memory() -> dict:
@@ -152,7 +144,7 @@ def platform_probe(kb, questions: list, index, llm_ready, dense_sec: float | Non
                    "bytes": kb_path.stat().st_size if kb_path and kb_path.is_file() else None,
                    "sha256": kb_hash(kb), "docs": len(kb.docs), "company": len(kb.company), "laws": len(kb.laws),
                    "chunks": len(kb.chunks), "removed_injections": sum(len(d.removed) for d in kb.docs),
-                   "prebuilt_index": None},
+                   "prebuilt_index": getattr(index, "prebuilt", None)},
             "questions": {"n": len(questions), "dialogs": dialogs,
                           "dialog_share": round(dialogs / len(questions), 3) if questions else 0,
                           "chars_mean": round(statistics.mean(lens)), "chars_max": max(lens)},

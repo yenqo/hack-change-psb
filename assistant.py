@@ -75,7 +75,8 @@ class LegalAssistant:
                         kb = self._kbmod.build_kb()
                         idx = indexmod.Index(kb)
                         if kb.chunks and self._config.API_BASE:
-                            idx.build_dense(cap=60.0)
+                            if not (self._config.PREBUILT_INDEX and idx.load_prebuilt().get("used")):
+                                idx.build_dense(cap=60.0)
                     self._kb, self._index = kb, idx
                     self._ids = self._kbmod.doc_ids(kb)
                     self._by_id = {v: kb.docs[k] for k, v in self._ids.items()}

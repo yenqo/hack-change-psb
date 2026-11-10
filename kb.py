@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import zipfile
@@ -673,3 +674,11 @@ def doc_markup(d: Doc) -> dict:
             removed.append({"start": s, "end": e, "original": next(rem, ""),
                             "note": "Встроенная инструкция для ИИ удалена: не является положением документа"})
     return {"edition_notes": notes, "removed_instructions": removed}
+
+
+def kb_hash(kb: KB) -> str:
+    """Отпечаток базы: не зависит от того, ZIP это или папка (имена и тексты документов)."""
+    h = hashlib.sha256()
+    for d in sorted(kb.docs, key=lambda d: d.path):
+        h.update(d.path.encode("utf-8") + b"\0" + hashlib.sha256(d.text.encode("utf-8")).digest())
+    return h.hexdigest()

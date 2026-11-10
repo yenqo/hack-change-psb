@@ -39,7 +39,8 @@ CACHE_DB = devenv.ROOT / "eval" / "cache" / "dev_cache.sqlite"
 class Cache:
     """Кэш в SQLite: таблицы chat, emb, judge. Ключ — sha256 запроса."""
 
-    def __init__(self, path: Path = CACHE_DB) -> None:
+    def __init__(self, path: Path | None = None) -> None:
+        path = path or CACHE_DB
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path), check_same_thread=False)
         self.lock = threading.Lock()

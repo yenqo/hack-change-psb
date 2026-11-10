@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import runtime
-from config import API_BASE, LLM_KEY, MAX_WORKERS, OUTPUT_FILE, log, remaining
+from config import API_BASE, LLM_KEY, MAX_WORKERS, OUTPUT_FILE, PREBUILT_INDEX, log, remaining
 from kb import KB, build_kb, decode_bytes, find_questions
 from runtime import choose_level
 from index import Index, embed_questions
@@ -95,7 +95,8 @@ def main() -> None:
     dense_sec = None
     if kb.chunks:
         t_dense = time.monotonic()
-        index.build_dense(cap=60.0)
+        if not (PREBUILT_INDEX and index.load_prebuilt().get("used")):
+            index.build_dense(cap=60.0)
         dense_sec = round(time.monotonic() - t_dense, 1)
         if index.vecs is not None:
             embed_questions(preps)

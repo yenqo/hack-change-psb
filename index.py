@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import math
 import operator
+import sys
 import time
+from array import array
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, wait
 from typing import TYPE_CHECKING
 
 import runtime
-from config import API_BASE, log, remaining
+from config import API_BASE, EMB_MODEL, env, log, remaining
 from textproc import expand_query, tokenize
-from llm import embed
+from kb import kb_hash
+from llm import APIError, embed
 
 if TYPE_CHECKING:
     from kb import KB
@@ -36,6 +43,7 @@ class Index:
         self.avgdl = (sum(self.lens) / n) if self.lens else 1.0
         self.idf = {t: math.log(1 + (n - len(p) + 0.5) / (len(p) + 0.5)) for t, p in self.postings.items()}
         self.vecs: list[list[float]] | None = None
+        self.prebuilt: dict | None = None
 
     def bm25(self, query: str) -> list[tuple[int, float]]:
         scores: dict[int, float] = {}
@@ -77,6 +85,82 @@ class Index:
         runtime.FLAGS.dense = True
         log(f"Эмбеддинги базы готовы: {len(texts)} фрагментов за {time.monotonic() - t0:.1f} c")
 
+    # ------------------------------------------------------------------ 7.2: готовый индекс
+    def fingerprint(self) -> dict:
+        """Отпечаток базы и нарезки: готовые векторы годятся, только если он совпал."""
+        texts = "\n\x00".join(c.search[:1200] for c in self.kb.chunks)
+        return {"kb_sha256": kb_hash(self.kb), "texts_sha256": hashlib.sha256(texts.encode("utf-8")).hexdigest(),
+                "n": len(self.kb.chunks)}
+
+    def save_vectors(self, path: Path, emb_model: str) -> dict:
+        assert self.vecs is not None, "нет векторов"
+        dim = len(self.vecs[0])
+        arr = array("f", [x for v in self.vecs for x in v])
+        if arr.itemsize != 4:
+            raise RuntimeError("float32 недоступен")
+        data = {"format": 1, **self.fingerprint(), "emb_model": emb_model, "dim": dim, "dtype": "float32",
+                "byteorder": "little",
+                "vectors": base64.b64encode(arr.tobytes() if sys.byteorder == "little" else _swap(arr)).decode("ascii")}
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return {k: v for k, v in data.items() if k != "vectors"}
+
+    def load_prebuilt(self, path: Path | None = None, sample: int = 8, min_cos: float = 0.99) -> dict:
+        self.prebuilt = self._load_prebuilt(path, sample, min_cos)
+        return self.prebuilt
+
+    def _load_prebuilt(self, path: Path | None, sample: int, min_cos: float) -> dict:
+        """Готовые векторы базы вместо расчёта при старте. Используются, если совпали отпечаток базы, нарезка,
+        модель эмбеддингов и размерность, а контрольные векторы, посчитанные API сейчас, совпадают с сохранёнными
+        (косинус ≥ min_cos). Иначе — ничего не меняет (дальше build_dense, как в v1.3). Возвращает сведения для probe."""
+        path = path or INDEX_VECTORS
+        info: dict = {"found": path.is_file(), "used": False}
+        if not info["found"] or not self.kb.chunks or not API_BASE:
+            return info
+        t0 = time.monotonic()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            fp = self.fingerprint()
+            for key in ("kb_sha256", "texts_sha256", "n"):
+                if data.get(key) != fp[key]:
+                    info["reason"] = f"не совпал {key}"
+                    return info
+            if str(data.get("emb_model", "")).lower().split("/")[-1] != EMB_MODEL.lower().split("/")[-1]:
+                info["reason"] = "другая модель эмбеддингов"
+                return info
+            arr = array("f")
+            arr.frombytes(base64.b64decode(data["vectors"]))
+            if sys.byteorder != data.get("byteorder", "little"):
+                arr.byteswap()
+            dim = int(data["dim"])
+            if len(arr) != dim * fp["n"]:
+                info["reason"] = "размер массива"
+                return info
+            vecs = [list(arr[i * dim:(i + 1) * dim]) for i in range(fp["n"])]
+            # контрольные векторы через API: та же ли модель на самом деле
+            idx = sorted({round(k * (fp["n"] - 1) / max(1, sample - 1)) for k in range(sample)})
+            try:
+                fresh = embed([self.kb.chunks[i].search[:1200] for i in idx])
+            except APIError as exc:
+                info["reason"] = f"контроль не выполнен: {exc}"[:120]
+                return info
+            if len(fresh[0]) != dim:
+                info["reason"] = f"размерность API {len(fresh[0])} ≠ {dim}"
+                return info
+            cos = [sum(map(operator.mul, fresh[j], vecs[i])) /
+                   (math.sqrt(sum(x * x for x in vecs[i])) or 1.0) for j, i in enumerate(idx)]
+            info["min_cos"] = round(min(cos), 5)
+            if min(cos) < min_cos:
+                info["reason"] = "векторы API отличаются от сохранённых"
+                return info
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            info["reason"] = f"{type(exc).__name__}"
+            return info
+        self.vecs = vecs
+        runtime.FLAGS.dense = True
+        info.update(used=True, sec=round(time.monotonic() - t0, 2), dim=dim)
+        log(f"Готовый индекс загружен: {fp['n']} векторов за {info['sec']} c (контроль: косинус ≥ {info['min_cos']})")
+        return info
+
     def dense(self, qvec: list[float] | None) -> list[tuple[int, float]]:
         if self.vecs is None or qvec is None:
             return []
@@ -115,3 +199,12 @@ def embed_questions(preps: list[Prepared], cap: float = 25.0) -> None:
         return
     for p, v in zip(preps, out):
         p.qvec = v
+
+
+INDEX_VECTORS = Path(env("SOLUTION_INDEX_FILE") or Path(__file__).resolve().parent / "index_vectors.json")
+
+
+def _swap(arr: array) -> bytes:
+    a = array(arr.typecode, arr)
+    a.byteswap()
+    return a.tobytes()
