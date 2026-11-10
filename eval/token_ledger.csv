@@ -1,0 +1,12 @@
+ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached_tokens
+2026-11-10 15:28:18,0_api_check,проверка ключа,deepseek-v4.1-flash,3,7546,51,7597,3584
+2026-11-10 15:32:00,0_api_check,прогон ядра на демо,deepseek-v4.1-flash,11,94319,987,95306,0
+2026-11-10 15:34:43,0_api_check,прогон ядра на демо,deepseek-v4.1-flash,11,94319,999,95318,75136
+2026-11-10 16:56:45,3_stand,прогон current smoke,deepseek-v4.1-flash,3,18588,471,19059,0
+2026-11-10 16:56:48,3_stand,прогон current smoke,deepseek-v4.1-flash,1,10642,102,10744,0
+2026-11-10 16:57:01,3_stand,прогон starter starter_b41c768eaeeb,deepseek-v4.1-flash,3,2503,265,2768,0
+2026-11-10 16:57:20,3_stand,судья,deepseek-v4.1-flash,6,4354,412,4766,0
+2026-11-10 17:00:28,3_stand,диагностика,deepseek-v4.1-flash,2,112,10,122,0
+2026-11-10 17:00:31,3_stand,диагностика,deepseek-v4.1-flash,2,112,10,122,0
+2026-11-10 17:01:14,3_stand,прогон current smoke,deepseek-v4.1-flash,5,37851,633,38484,0
+2026-11-10 17:01:34,3_stand,судья,deepseek-v4.1-flash,6,4788,408,5196,0
