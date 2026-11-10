@@ -18,3 +18,8 @@ ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached
 2026-11-10 17:19:56,dev_smoke,прогон starter starter_5650eee10be6,deepseek-v4.1-flash,2,1803,178,1981,0
 2026-11-10 17:21:45,dev_smoke,судья,deepseek-v4.1-flash,33,27322,2163,29485,0
 2026-11-10 17:22:57,dev_smoke,судья,deepseek-v4.1-flash,3,2566,220,2786,0
+2026-11-10 18:00:48,10_contract,примеры контракта,deepseek-v4.1-flash,3,27859,389,28248,0
+2026-11-10 18:01:18,10_contract,примеры контракта,deepseek-v4.1-flash,2,18440,487,18927,0
+2026-11-10 18:03:05,10_contract,примеры контракта,deepseek-v4.1-flash,2,17002,266,17268,8448
+2026-11-10 18:05:29,10_contract,примеры контракта,deepseek-v4.1-flash,3,27859,467,28326,8576
+2026-11-10 18:05:56,10_contract,примеры контракта,deepseek-v4.1-flash,4,35442,751,36193,26240

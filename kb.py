@@ -571,3 +571,105 @@ def related_docs(kb: KB, d: Doc) -> list[Doc]:
         elif len(stems_o) >= 3 and stems_o <= set(tokenize(d.text)):
             out.append(o)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Идентификаторы и разметка документов для веб-части (контракт assistant.py)
+# ---------------------------------------------------------------------------
+
+_TRANSLIT = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+                     ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s",
+                      "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya"]))
+
+
+def slug(text: str) -> str:
+    s = "".join(_TRANSLIT.get(ch, ch) for ch in text.lower())
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-") or "doc"
+
+
+def doc_ids(kb: KB) -> dict[int, str]:
+    """Стабильные doc_id: slug имени файла без папки (не зависит от порядка загрузки и ZIP/папки)."""
+    out: dict[int, str] = {}
+    used: set[str] = set()
+    for d in sorted(kb.docs, key=lambda d: d.path):
+        base = slug(label_from_path(d.path))
+        sid, k = base, 2
+        while sid in used:
+            sid, k = f"{base}-{k}", k + 1
+        used.add(sid)
+        out[d.idx] = sid
+    return out
+
+
+def doc_type(d: Doc) -> str:
+    if d.kind == "law":
+        return "статья закона"
+    t = (d.title + " " + d.label).upper()
+    for key, name in (("ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ", "доп. соглашение"), ("ДОП СОГЛАШЕНИЕ", "доп. соглашение"),
+                      ("РЕГЛАМЕНТ", "регламент"), ("ЗАПИСКА", "служебная записка"), ("ПИСЬМО", "письмо"),
+                      ("ИСХ.", "письмо"), ("ДОГОВОР", "договор")):  # «договор» — последним: он есть в других названиях
+        if key in t:
+            return name
+    return "документ"
+
+
+_COMPANY_CLAUSE = re.compile(r"^(\d+(?:\.\d+)*)\.\s+\S")
+
+
+def _line_spans(text: str) -> list[tuple[int, int, str]]:
+    spans, pos = [], 0
+    for line in text.split("\n"):
+        spans.append((pos, pos + len(line), line))
+        pos += len(line) + 1
+    return spans
+
+
+def doc_clauses(d: Doc) -> list[dict]:
+    """Пункты документа со смещениями в d.text: clause — «3.1» (документы компании), «п. 3» / «ч. 2» /
+    «п. 2, пп. 1» (законы); start/end — весь текст пункта до следующего пункта того же или верхнего уровня."""
+    lines = _line_spans(d.text)
+    items: list[dict] = []
+    if d.kind == "company":
+        for s, e, ln in lines:
+            m = _COMPANY_CLAUSE.match(ln.strip()) if ln.strip() == ln.lstrip() else None
+            if m:
+                items.append({"clause": m.group(1), "level": m.group(1).count(".") + 1, "start": s, "line_end": e,
+                              "title": ln.strip()[:120]})
+    else:
+        numbered = sum(1 for _, _, ln in lines if POINT_RE.match(ln.strip())) >= 2
+        word = "п." if d.label.startswith("НК") else "ч."
+        point = None
+        for s, e, ln in lines:
+            st = ln.strip()
+            pm = POINT_RE.match(st) if numbered else None
+            sm = SUB_RE.match(st)
+            if pm and not NOTE_RE.match(st):
+                point = pm.group(1)
+                items.append({"clause": f"{word} {point}", "level": 1, "start": s, "line_end": e, "title": st[:120]})
+            elif sm and point is not None and d.label.startswith("НК"):
+                items.append({"clause": f"{word} {point}, пп. {sm.group(1)}", "level": 2, "start": s, "line_end": e,
+                              "title": st[:120]})
+    # конец пункта — начало следующего пункта того же или более высокого уровня (или конец текста)
+    for i, it in enumerate(items):
+        end = len(d.text)
+        for nxt in items[i + 1:]:
+            if nxt["level"] <= it["level"]:
+                end = nxt["start"]
+                break
+        it["end"] = len(d.text[:end].rstrip())
+        del it["line_end"]
+    return items
+
+
+def doc_markup(d: Doc) -> dict:
+    """Пометки редакции (законы) и вырезанные встроенные инструкции — со смещениями в d.text."""
+    notes, removed = [], []
+    rem = iter(d.removed)
+    for s, e, ln in _line_spans(d.text):
+        st = ln.strip()
+        if d.kind == "law" and st and NOTE_RE.match(st):
+            notes.append({"start": s, "end": e, "text": ln})
+        if st == INJ_MARK:
+            removed.append({"start": s, "end": e, "original": next(rem, ""),
+                            "note": "Встроенная инструкция для ИИ удалена: не является положением документа"})
+    return {"edition_notes": notes, "removed_instructions": removed}

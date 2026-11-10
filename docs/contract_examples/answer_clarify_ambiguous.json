@@ -1,0 +1,58 @@
+{
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Какой срок оплаты по договору с «Альфой»?"
+      }
+    ]
+  },
+  "response": {
+    "contract_version": "1.0",
+    "status": "clarify",
+    "text": "Если речь об ООО «Альфа-Трейд», по договору поставки № П-17/2024 покупатель оплачивает товар в течение 30 календарных дней с даты подписания УПД по соответствующей партии (п. 4.2). Если речь об ООО «Альфа-Трейдинг», по договору поставки № ПТ-05/2023 срок оплаты составляет 45 календарных дней с даты поставки (п. 4.1). Уточните, какого контрагента вы имеете в виду.",
+    "citations": [
+      {
+        "doc_id": "dogovor-postavki-p-17-2024-alfa-treyd",
+        "doc_title": "ДОГОВОР ПОСТАВКИ № П-17/2024",
+        "doc_kind": "company",
+        "clause": null,
+        "quote": "ДОГОВОР ПОСТАВКИ № П-17/2024",
+        "start": 0,
+        "end": 28,
+        "found": true,
+        "applies_to_event_date": null
+      },
+      {
+        "doc_id": "dogovor-postavki-pt-05-2023-alfa-treyding",
+        "doc_title": "ДОГОВОР ПОСТАВКИ № ПТ-05/2023",
+        "doc_kind": "company",
+        "clause": "4.2",
+        "quote": "4.2. По соглашению Сторон допускается предоплата. Размер предоплаты указывается в счёте Поставщика.",
+        "start": 1482,
+        "end": 1581,
+        "found": true,
+        "applies_to_event_date": null
+      },
+      {
+        "doc_id": "dogovor-postavki-pt-05-2023-alfa-treyding",
+        "doc_title": "ДОГОВОР ПОСТАВКИ № ПТ-05/2023",
+        "doc_kind": "company",
+        "clause": "4.1",
+        "quote": "4.1. Покупатель оплачивает Товар в течение 45 (сорока пяти) календарных дней с даты поставки.",
+        "start": 1388,
+        "end": 1481,
+        "found": true,
+        "applies_to_event_date": null
+      }
+    ],
+    "warnings": [],
+    "timing_ms": {
+      "search": 8,
+      "generate": 9605,
+      "verify": 18,
+      "total": 9637
+    },
+    "debug": {}
+  }
+}

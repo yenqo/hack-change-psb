@@ -95,5 +95,12 @@ def debug_dump(record: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+# Режим работы: batch — пакетный прогон solution.py с общим дедлайном; web — фасад assistant.py: общего дедлайна
+# нет (тайм-аут одного ответа соблюдает фасад), поэтому решения конвейера те же, что в пакетном режиме при запасе времени.
+MODE = env("SOLUTION_MODE", "batch")
+
+
 def remaining() -> float:
+    if MODE == "web":
+        return 3600.0
     return DEADLINE - time.monotonic()

@@ -1,0 +1,21 @@
+{
+  "contract_version": "1.0",
+  "mode": "web",
+  "kb_loaded": true,
+  "kb_error": null,
+  "documents": 21,
+  "chunks": 336,
+  "dense_index": true,
+  "llm_configured": true,
+  "llm_last_ok": true,
+  "model": "deepseek-v4.1-flash",
+  "rerank_enabled": false,
+  "degraded": {
+    "rerank_off": true,
+    "compact": false,
+    "minimal": false,
+    "tiny": false
+  },
+  "answer_timeout_sec": 120.0,
+  "late_overrides_ignored": []
+}

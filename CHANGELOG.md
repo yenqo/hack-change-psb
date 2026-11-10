@@ -2,6 +2,18 @@
 
 Баллы — public-рейтинг автоматической проверки (шкала страницы сабмитов 0–100). Подробности и доказательства — в [журнале экспериментов](docs/04_experiments.md).
 
+## v1.4 (в работе) — 10.11.2026 · сабмит 4: 0,289
+
+Поведение ответов — как у v1.3 (golden master совпадает байт в байт); балл 0,289 против 0,2465 — шум публичного лидерборда.
+
+**Изменено**
+- `solution.py` разложен на модули в корне: `config`, `textproc`, `dates`, `kb`, `runtime`, `llm`, `index`, `prompts`, `checks`, `pipeline`, `probe`, `solution`.
+
+**Добавлено**
+- Блоки `PLATFORM PROBE` и `RUN STATS` в stderr (`SOLUTION_PROBE=0` — выключить). Платформа логов не показывает — блоки нужны для локальных прогонов.
+- **Контракт для веб-части 1.0:** фасад `assistant.LegalAssistant` (`answer`, `answer_text`, `list_documents`, `get_document`, `health`), JSON-контракт в [docs/integration.md](docs/integration.md), примеры в `docs/contract_examples/`, CLI `tools/ask.py`. Ответ фасада совпадает с пакетным режимом.
+- Тесты без сети (`tools/run_tests.sh`), сборка и проверка сабмита (`tools/make_submission.py`), инструменты оценки (`tools/eval.py`) и проверки golden set (`tools/check_golden.py`).
+
 ## v1.3 — 09.11.2026 · **24,652** · 3-е место
 
 Цель — чтобы модель вообще отвечала на платформе. v1 и v1.2 получили по 20,77, то есть только запасные ответы.
