@@ -74,6 +74,12 @@ PROBE = env("SOLUTION_PROBE", "1") != "0"
 # Пробный вызов /rerank для PLATFORM PROBE: только локально (логов платформы нет — на ней он бесполезен).
 PROBE_RERANK = env("SOLUTION_PROBE_RERANK", "") == "1"
 
+# Доработки, ждущие замера на golden set (eval/experiments.md, «Отложенная валидация»). По умолчанию выключены:
+# поведение строго как у v1.3.
+FEWSHOT = env("SOLUTION_FEWSHOT", "demo")              # 7.6: demo — примеры из демо-вопросов; fictional — вымышленные
+FIX_DOCNUM = env("SOLUTION_FIX_DOCNUM", "") == "1"     # B3: номера документов не проверяются как числа
+CHECK_REFS = env("SOLUTION_CHECK_REFS", "") == "1"     # 7.1: проверка номеров пунктов и документов в ответе
+
 # Текущая дата для промпта. SOLUTION_TODAY (ГГГГ-ММ-ДД) фиксирует её в тестах; на платформе не задаётся.
 SOLUTION_TODAY = env("SOLUTION_TODAY")
 

@@ -10,15 +10,17 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (DEBUG, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (CHECK_REFS, DEBUG, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import expand_query
 from dates import date_note, event_periods
 from kb import doc_clauses, doc_ids, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
-from prompts import SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message
-from checks import clean_answer, drop_sentences, unverified
+from prompts import (REPAIR_REFS, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message,
+                     repair_refs_message)
+from checks import (_CLAUSE_REF, _applies, _clause_key, _expand_nums, _mentions, _quote_span, clean_answer,
+                    drop_ref_sentences, drop_sentences, kb_clauses, unverified, unverified_refs)
 
 if TYPE_CHECKING:
     from kb import Chunk, Doc, KB
@@ -246,15 +248,24 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     if trace:
         trace("verify")
     bad = unverified(ans, user_msg, qtext)
+    # 7.1 (флаг): ссылки на пункты и документы, которых нет в базе
+    ctx_docs = list(comp) + [kb.docs[d] for d, _ in law_items]
+    refs = [sp for sp, _ in unverified_refs(kb, ans, qtext, ctx_docs)] if CHECK_REFS else []
     full = runtime.TIMING.get("chat_full", 8.0)
     can_repair = level >= 4 and remaining() > 60 and per_question_budget() >= 2.2 * full
-    if bad and can_repair:
+    if (bad or refs) and can_repair:
         spans = [sp for sp, _ in bad]
-        log(f"Неподтверждённые числа {spans[:5]} — запрашиваю исправление")
-        fix = (f"Черновик ответа:\n{ans}\n\nАвтоматическая проверка: числа или даты {', '.join(spans[:8])} не найдены "
-               "в документах и не получаются простым расчётом из чисел документов и вопроса. Перепиши ответ: убери или "
-               "замени их точными значениями из документов. Если число получено расчётом, приведи формулу с исходными "
-               "числами из документов. Остальные требования к ответу сохраняются. Верни только итоговый текст ответа.")
+        if bad:
+            log(f"Неподтверждённые числа {spans[:5]} — запрашиваю исправление")
+            fix = (f"Черновик ответа:\n{ans}\n\nАвтоматическая проверка: числа или даты {', '.join(spans[:8])} не найдены "
+                   "в документах и не получаются простым расчётом из чисел документов и вопроса. Перепиши ответ: убери или "
+                   "замени их точными значениями из документов. Если число получено расчётом, приведи формулу с исходными "
+                   "числами из документов. Остальные требования к ответу сохраняются. Верни только итоговый текст ответа.")
+            if refs:
+                fix += " " + REPAIR_REFS.format(refs=", ".join(refs[:8]))
+        else:
+            log(f"Неподтверждённые ссылки {refs[:5]} — запрашиваю исправление")
+            fix = repair_refs_message(ans, refs)
         try:
             fixed = clean_answer(chat(messages + [{"role": "assistant", "content": ans},
                                                   {"role": "user", "content": fix}]))
@@ -262,6 +273,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
                 ans = fixed
                 runtime.FLAGS.inc("repaired")
                 bad = unverified(ans, user_msg, qtext)
+                if CHECK_REFS:
+                    refs = [sp for sp, _ in unverified_refs(kb, ans, qtext, ctx_docs)]
         except APIError as exc:
             log(f"Исправление не удалось: {exc}")
     # Сроки и даты модель копирует из текста, а не считает: неподтверждённые — почти наверняка ошибка.
@@ -272,11 +285,19 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
             runtime.FLAGS.inc("trimmed")
             log(f"Удалены предложения с неподтверждёнными сроками/датами: {strict[:5]}")
             ans = trimmed
+    if refs:
+        trimmed = drop_ref_sentences(ans, refs)
+        if trimmed != ans:
+            runtime.FLAGS.inc("ref_trimmed")
+            log(f"Удалены предложения с неподтверждёнными ссылками: {refs[:5]}")
+            ans = trimmed
     runtime.FLAGS.inc(f"level{level}")
     record = {"question": qtext, "current": prep.current, "level": level,
               "laws": [(kb.docs[d].label, "целиком" if chs is None else [c.label for c in chs]) for d, chs in law_items],
               "company": [d.label for d in comp], "date_note": dnote, "draft": draft, "unverified": bad,
               "final": ans, "prompt_chars": len(user_msg)}
+    if CHECK_REFS:
+        record["unverified_refs"] = refs
     debug_dump(record)
     if info is not None:
         info.update(record, law_doc_idx=[d for d, _ in law_items], company_doc_idx=[d.idx for d in comp])
@@ -305,120 +326,6 @@ class Result:
         return {"contract_version": self.contract_version, "status": self.status, "text": self.text,
                 "citations": self.citations, "warnings": self.warnings, "timing_ms": self.timing_ms,
                 "debug": self.debug}
-
-
-# Упоминания документов компании в тексте ответа: (шаблон, признак метки документа в базе)
-_COMPANY_MENTIONS = [
-    (r"доп\w*\.?\s+соглашени\w*\s*(?:№\s*)?1\b", "Доп соглашение 1"),
-    (r"ПТ-05(?:/2023)?|Альфа-Трейдинг", "ПТ-05-2023"),
-    (r"А-08(?:/2024)?|Северн\w*\s+Склад", "А-08-2024"),
-    (r"П-17(?:/2024)?|Альфа-Трейд(?!инг)", "П-17-2024"),
-    (r"К-12\b|комплаенс", "К-12"),
-    (r"ЮО-7\b|служебн\w*\s+записк", "Служебная записка"),
-    (r"Регламент\w*", "Регламент"),
-]
-_LAW_MENTION = re.compile(r"(ТК|НК|КоАП)\s*РФ\W{0,3}(?:ст\.|стать\w*)\s*(\d+(?:\.\d+)?)|"
-                          r"(?:ст\.|стать\w*)\s*(\d+(?:\.\d+)?)\s*(ТК|НК|КоАП)\s*РФ|"
-                          r"(\d+-ФЗ)\W{0,3}(?:ст\.|стать\w*)\s*(\d+)|(?:ст\.|стать\w*)\s*(\d+)(?:,?\s*ч\.\s*\d+)?\s*"
-                          r"(?:Федеральн\w+\s+закона\s+)?(?:№\s*)?(\d+-ФЗ)", re.I)
-_CLAUSE_REF = re.compile(r"(?<![\w.])(пп?|ч|подп)\.\s*(\d+(?:\.\d+)*(?:\s*(?:,|и|–|-|—)\s*\d+(?:\.\d+)*)*)", re.I)
-
-
-def _expand_nums(raw: str) -> list[str]:
-    out = []
-    for part in re.split(r"\s*(?:,|\bи\b)\s*", raw):
-        m = re.fullmatch(r"(\d+(?:\.\d+)*)\s*[–—-]\s*(\d+(?:\.\d+)*)", part.strip())
-        if m:
-            a, b = m.group(1).split("."), m.group(2).split(".")
-            if len(a) == len(b) and a[:-1] == b[:-1] and int(a[-1]) <= int(b[-1]) <= int(a[-1]) + 20:
-                out += [".".join(a[:-1] + [str(k)]) for k in range(int(a[-1]), int(b[-1]) + 1)]
-            else:
-                out += [m.group(1), m.group(2)]
-        elif re.fullmatch(r"\d+(?:\.\d+)*", part.strip()):
-            out.append(part.strip())
-    return out
-
-
-def _mentions(kb: KB, text: str, qtext: str) -> list[tuple[int, int, Doc]]:
-    """Упоминания документов в ответе: (начало, конец, документ). Общие слова «договор», «Регламент» без
-    уточнения относятся к последнему упомянутому договору / редакции регламента, иначе — по дате события."""
-    raw: list[tuple[int, int, str, str | None]] = []   # (начало, конец, ключ, уточнение)
-    for pat, key in _COMPANY_MENTIONS:
-        for m in re.finditer(pat, text, re.I):
-            qual = None
-            if key == "Регламент":
-                after = text[m.end(): m.end() + 70]
-                if re.search(r"^\W*(?:\w+\s+){0,4}?(?:ред\w*\.?\s*(?:от\s*)?10\.01\.2023|2023|утрат)", after, re.I):
-                    qual = "2023"
-                elif re.search(r"^\W*(?:\w+\s+){0,4}?(?:ред\w*\.?\s*(?:от\s*)?01\.03\.2025|2025|действующ)", after, re.I):
-                    qual = "2025"
-            raw.append((m.start(), m.end(), key, qual))
-    for m in re.finditer(r"(?<![\w-])договор\w*(?!\s+(?:поставки|аренды)?\s*№)", text, re.I):
-        raw.append((m.start(), m.end(), "договор", None))
-    raw.sort(key=lambda x: (x[0], -(x[1] - x[0])))
-    found: list[tuple[int, int, Doc]] = []
-    periods = event_periods(qtext)
-    last_contract = last_reg = None
-    for s, e, key, qual in raw:
-        if any(a <= s < b for a, b, _ in found):
-            continue
-        doc = None
-        if key == "Регламент":
-            regs = [d for d in kb.company if "Регламент" in d.label]
-            if qual:
-                doc = next((d for d in regs if qual in d.label), None)
-            elif last_reg is not None:
-                doc = last_reg
-            else:
-                fit = [d for d in regs if _applies(d, periods)]
-                doc = fit[0] if len(fit) == 1 else next((d for d in regs if "2025" in d.label), None)
-            last_reg = doc or last_reg
-        elif key == "договор":
-            doc = last_contract
-        else:
-            doc = next((d for d in kb.company if key in d.label), None)
-            if doc is not None and doc_type_is_contract(doc):
-                last_contract = doc
-        if doc is not None:
-            found.append((s, e, doc))
-    for m in _LAW_MENTION.finditer(text):
-        g = m.groups()
-        code, art = (g[0], g[1]) if g[0] else (g[3], g[2]) if g[3] else (g[4], g[5]) if g[4] else (g[7], g[6])
-        code = code.upper().replace("КОАП", "КоАП")
-        for d in kb.laws:
-            if (code.endswith("ФЗ") and code in d.label and d.label.endswith(f"ст. {art}")) or \
-                    d.label == f"{code} РФ, ст. {art}":
-                found.append((m.start(), m.end(), d))
-                break
-    return sorted(found, key=lambda x: x[0])
-
-
-def doc_type_is_contract(d: Doc) -> bool:
-    return d.kind == "company" and d.title.upper().startswith("ДОГОВОР")
-
-
-def _clause_key(d: Doc, kind: str, num: str, prev_point: str | None) -> str:
-    if d.kind == "company":
-        return num
-    word = "п." if d.label.startswith("НК") else "ч."
-    if kind.lower() in ("пп", "подп") and prev_point:
-        return f"{word} {prev_point}, пп. {num}"
-    return f"{word} {num}"
-
-
-def _quote_span(d: Doc, start: int, end: int, limit: int = 600) -> tuple[int, int]:
-    if end - start > limit:
-        cut = d.text.rfind(" ", start, start + limit)
-        end = cut if cut > start + limit // 2 else start + limit
-    return start, end
-
-
-def _applies(d: Doc, periods: list) -> bool | None:
-    if not periods or not (d.valid_from or d.valid_to):
-        return None
-    vf = d.valid_from or date(1900, 1, 1)
-    vt = d.valid_to or date(2999, 12, 31)
-    return all(vf <= end and start <= vt for start, end, _ in periods)
 
 
 def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> list[dict]:
@@ -484,15 +391,6 @@ def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> lis
     # документ без пункта не нужен, если на него есть ссылка с пунктом
     with_clause = {c["doc_id"] for c in out if c["clause"]}
     return [c for c in out if c["clause"] or c["doc_id"] not in with_clause]
-
-
-_KB_CLAUSES: dict[int, list] = {}
-
-
-def kb_clauses(d: Doc) -> list[dict]:
-    if id(d) not in _KB_CLAUSES:
-        _KB_CLAUSES[id(d)] = doc_clauses(d)
-    return _KB_CLAUSES[id(d)]
 
 
 _NO_INFO = re.compile(r"(?i)в базе( знаний)? нет|нет документов|не найден\w* (документ|сведени)|"
