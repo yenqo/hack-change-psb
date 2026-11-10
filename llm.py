@@ -12,7 +12,7 @@ import time
 import httpx
 
 import runtime
-from config import (API_BASE, EMBED_KEY, EMB_MODEL, LLM_KEY, LLM_MODEL, MAX_TOKENS, MAX_WORKERS, RERANKER_MODEL,
+from config import (RERANK_RECHECK, API_BASE, EMBED_KEY, EMB_MODEL, LLM_KEY, LLM_MODEL, MAX_TOKENS, MAX_WORKERS, RERANKER_MODEL,
     RERANK_KEY, TEMPERATURE, log, remaining)
 from runtime import llm_seems_down
 
@@ -217,7 +217,42 @@ def embed(texts: list[str]) -> list[list[float]]:
     return out  # type: ignore[return-value]
 
 
+def _rerank_disable(permanent: bool, why: str) -> None:
+    """B6: отключить реранкер — навсегда (404, неверный формат) или временно (медленный, сбои подряд). Под FLAGS.lock."""
+    f = runtime.FLAGS
+    f.rerank_off = True
+    if permanent:
+        f.rerank_off_permanent = True
+        f.rerank_off_at = None
+    else:
+        f.rerank_off_at = time.monotonic()
+        with runtime.PROG.lock:
+            f.rerank_off_q = runtime.PROG.finished
+    f.stats["rerank_disabled"] = f.stats.get("rerank_disabled", 0) + 1
+    log(f"Реранкер отключён {'навсегда' if permanent else 'временно'}: {why}")
+
+
+def _rerank_recheck() -> None:
+    """B6: временно отключённый реранкер снова пробуем через 120 с или через 10 вопросов."""
+    f = runtime.FLAGS
+    with f.lock:
+        if not f.rerank_off or f.rerank_off_permanent or f.rerank_off_at is None:
+            return
+        with runtime.PROG.lock:
+            done = runtime.PROG.finished
+        if time.monotonic() - f.rerank_off_at < 120 and done - f.rerank_off_q < 10:
+            return
+        f.rerank_off = False
+        f.rerank_off_at = None
+        f.rerank_streak = 0
+        f.stats["rerank_recheck"] = f.stats.get("rerank_recheck", 0) + 1
+    runtime.TIMING.drop("rerank")
+    log("Реранкер: повторная проба")
+
+
 def rerank(query: str, docs: list[str], top_n: int) -> list[tuple[int, float]] | None:
+    if RERANK_RECHECK:
+        _rerank_recheck()
     if not RERANKER_MODEL or runtime.FLAGS.rerank_off or not docs:
         return None
     t0 = time.monotonic()
@@ -241,8 +276,12 @@ def rerank(query: str, docs: list[str], top_n: int) -> list[tuple[int, float]] |
             runtime.FLAGS.rerank_logged = True
             log(f"Реранкер работает, поля ответа: {sorted(data.keys())}, {time.monotonic() - t0:.1f} c")
         if runtime.TIMING.get("rerank", 0.0) > 6.0:
-            runtime.FLAGS.rerank_off = True
-            log("Реранкер отключён: слишком медленный")
+            if RERANK_RECHECK:
+                with runtime.FLAGS.lock:
+                    _rerank_disable(False, "слишком медленный")
+            else:
+                runtime.FLAGS.rerank_off = True
+                log("Реранкер отключён: слишком медленный")
         runtime.FLAGS.inc("rerank_ok")
         return res
     except (APIError, ValueError, TypeError, KeyError, AttributeError) as exc:
@@ -250,8 +289,15 @@ def rerank(query: str, docs: list[str], top_n: int) -> list[tuple[int, float]] |
             runtime.FLAGS.rerank_streak += 1
             if not (isinstance(exc, APIError) and exc.transient):
                 runtime.FLAGS.rerank_fail += 1
-            slow = "Timeout" in str(exc)  # медленный реранкер нам не нужен — отключаем сразу
-            if slow or runtime.FLAGS.rerank_streak >= 3 or runtime.FLAGS.rerank_fail >= 2:
-                runtime.FLAGS.rerank_off = True
+            if RERANK_RECHECK:
+                # B6: один тайм-аут не отключает; 2 сбоя подряд — временно; 2 неустранимые ошибки — навсегда
+                if runtime.FLAGS.rerank_fail >= 2:
+                    _rerank_disable(True, "неустранимые ошибки")
+                elif runtime.FLAGS.rerank_streak >= 2:
+                    _rerank_disable(False, "сбои подряд")
+            else:
+                slow = "Timeout" in str(exc)  # медленный реранкер нам не нужен — отключаем сразу
+                if slow or runtime.FLAGS.rerank_streak >= 3 or runtime.FLAGS.rerank_fail >= 2:
+                    runtime.FLAGS.rerank_off = True
         log(f"Реранкер: ошибка ({exc}){'; отключён' if runtime.FLAGS.rerank_off else ''}")
         return None

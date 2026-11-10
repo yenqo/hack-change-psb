@@ -37,7 +37,8 @@ SCENARIOS = ["normal", "fabricated", "reject_full", "reject_compact", "tiny", "t
 #   flaky4xx — случайный 400 «прокси перегружен» с вероятностью FAULT_P на каждый вызов чата;
 #   flaky_mix — то же плюс случайные 429 и 503;
 #   size400 — 400 «maximum context length» на полный запрос (настоящий «слишком велик»).
-FAULT_SCENARIOS = ["flaky4xx", "flaky_mix", "size400"]
+#   rerank_slow — реранкер отвечает ~7 с; rerank_timeout — реранкер с вероятностью SIM_RERANK_TIMEOUT_P висит до тайм-аута.
+FAULT_SCENARIOS = ["flaky4xx", "flaky_mix", "size400", "rerank_slow", "rerank_timeout"]
 
 # Пороги размера запроса для сценариев с отказом 4xx (символы сообщения пользователя).
 # На демо-вопросах полный запрос 21–31 тыс., компактный 10,7–15,5 тыс., минимальный 5,7–8,7 тыс.
@@ -61,6 +62,10 @@ class FakeProxy:
         self.rerank_seen = 0
         import random
         self.rng = random.Random(int(os.environ.get("FAULT_SEED", "1")))
+        self.sim_rng = random.Random(int(os.environ.get("FAULT_SEED", "1")) + 100)
+        self.sim_slow = float(os.environ.get("SIM_SLOW", "1"))
+        self.sim_rerank_timeout_p = float(os.environ.get("SIM_RERANK_TIMEOUT_P", "0.3"))
+        self.clock = None
         self.fault_p = float(os.environ.get("FAULT_P", "0.1"))
         self.probe_rerank = 0
 
@@ -74,6 +79,11 @@ class FakeProxy:
     def __call__(self, path: str, key: str, payload: dict, timeout: float = 90.0, attempts: int = 3,
                  max_wait: float = 60.0) -> dict:
         assert key == "test-key", "ядро должно передавать ключ из окружения"
+        if self.clock is not None:
+            lat, fault = self._sim_latency(path, payload, timeout)
+            self.clock.advance(lat)
+            if fault is not None:
+                raise fault
         with self.lock:
             if path == "/chat/completions":
                 return self._chat(payload, timeout, attempts)
@@ -82,6 +92,28 @@ class FakeProxy:
             if path == "/rerank":
                 return self._rerank(payload)
         raise AssertionError(f"неожиданный путь {path}")
+
+    def _sim_latency(self, path: str, payload: dict, timeout: float):
+        """Модель задержек (виртуальные секунды): полный запрос ≈ 8 c, меньше — быстрее; SIM_SLOW — замедление."""
+        jitter = self.sim_rng.uniform(0.75, 1.35)
+        if path == "/chat/completions":
+            msgs = payload["messages"]
+            if len(msgs) == 1 and msgs[0]["content"] == PROBE:
+                return 2.0 * self.sim_slow, None
+            size = sum(len(m["content"]) for m in msgs[1:])
+            lat = (1.5 + 2.6 * size / 10000) * self.sim_slow * jitter
+            if lat > timeout:
+                return timeout, self._err("ReadTimeout /chat/completions", transient=True)
+            return lat, None
+        if path == "/embeddings":
+            return 0.4 * jitter, None
+        if path == "/rerank":
+            if self.scenario == "rerank_slow":
+                return 7.0 * jitter, None
+            if self.scenario == "rerank_timeout" and self.sim_rng.random() < self.sim_rerank_timeout_p:
+                return 12.0, self._err("ReadTimeout /rerank", transient=True)
+            return 1.0 * jitter, None
+        return 0.0, None
 
     def _err(self, msg: str, transient: bool):
         return self.core.APIError(msg, transient=transient)
@@ -187,13 +219,33 @@ def run(which: str, scenario: str) -> dict:
     try:
         data = work / "data"
         data.mkdir()
-        shutil.copy(harness.DATA / "demo_questions.csv", data / "questions.csv")
+        sim = os.environ.get("SIM") == "1"
+        extra = {"LLM_BASE_URL": "http://stub.invalid/v1", "LLM_API_KEY": "test-key", "LLM_MODEL": "stub-model"}
+        clock = None
+        if sim:
+            # симуляция долгого прогона: N вопросов, MAX_WORKERS, бюджет как на платформе, виртуальное время
+            n_q = int(os.environ.get("SIM_N", "18"))
+            with open(harness.DATA / "demo_questions.csv", encoding="utf-8-sig", newline="") as f:
+                demo = [r["question"] for r in csv.DictReader(f)]
+            with open(data / "questions.csv", "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["id", "question"])
+                for i in range(n_q):
+                    q = demo[i % len(demo)]
+                    w.writerow([str(i + 1), q if i < len(demo) else f"{q} [{i // len(demo)}]"])
+            extra.update({"MAX_WORKERS": os.environ.get("SIM_WORKERS", "2"), "SOLUTION_DEBUG": "1",
+                          "SOLUTION_TIME_BUDGET": os.environ.get("SIM_BUDGET", str(16 * 60 + 30))})
+            import simclock
+            clock = simclock.SimClock()
+            clock.install()
+        else:
+            shutil.copy(harness.DATA / "demo_questions.csv", data / "questions.csv")
         shutil.copy(harness.DATA / "knowledge-base.zip", data / "knowledge-base.zip")
         harness.TEST_ENV["DATA_DIR"] = str(data)
         os.chdir(work)
-        core = harness.load_core(which, {"LLM_BASE_URL": "http://stub.invalid/v1", "LLM_API_KEY": "test-key",
-                                         "LLM_MODEL": "stub-model"})
+        core = harness.load_core(which, extra)
         proxy = FakeProxy(core, scenario)
+        proxy.clock = clock
         harness.patch_everywhere(core, "post_json", proxy)
         t0 = time.monotonic()
         core.main()
@@ -213,11 +265,34 @@ def run(which: str, scenario: str) -> dict:
                       "rerank_off": flags.rerank_off, "dense": flags.dense},
             "texts": dict(sorted(proxy.texts.items())),
             "probe_rerank_calls": proxy.probe_rerank,
+            "sim": sim_summary(work, rows, clock) if clock is not None else None,
             "_elapsed": round(elapsed, 1),
         }
     finally:
         os.chdir(harness.ROOT)
         shutil.rmtree(work, ignore_errors=True)
+
+
+def sim_summary(work: Path, rows: list, clock) -> dict:
+    """Итог симуляции: виртуальное время и уровень, на котором дан итоговый ответ на каждый вопрос."""
+    by_q: dict[str, list] = {}
+    dbg = work / "debug.jsonl"
+    if dbg.is_file():
+        for line in dbg.read_text(encoding="utf-8").splitlines():
+            rec = json.loads(line)
+            by_q.setdefault(rec["question"], []).append(rec)
+    with open(work / "data" / "questions.csv", encoding="utf-8", newline="") as f:
+        qtext = {r["id"]: r["question"] for r in csv.DictReader(f)}
+    levels = []
+    for qid, ans in rows[1:]:
+        if ans.startswith("По данным базы знаний") or ans.startswith("В базе знаний не найдено") or \
+                ans.startswith("Не удалось"):
+            levels.append("fallback")
+            continue
+        recs = [r for r in by_q.get(qtext[qid], []) if r.get("final") == ans]
+        levels.append(str(recs[-1]["level"]) if recs else "0")
+    dist = {k: levels.count(k) for k in ("4", "3", "2", "1", "0", "fallback")}
+    return {"elapsed": round(clock.elapsed(), 1), "levels": dist, "n": len(levels)}
 
 
 def run_subprocess(which: str, scenario: str, env_extra: dict | None = None) -> dict:

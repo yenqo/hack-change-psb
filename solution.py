@@ -24,9 +24,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import runtime
-from config import API_BASE, LLM_KEY, MAX_WORKERS, OUTPUT_FILE, PREBUILT_INDEX, log, remaining
+from config import API_BASE, FINAL_PASS, LLM_KEY, MAX_WORKERS, OUTPUT_FILE, PREBUILT_INDEX, log, remaining
 from kb import KB, build_kb, decode_bytes, find_questions
-from runtime import choose_level
+from runtime import choose_level, question_cost
 from index import Index, embed_questions
 from pipeline import Prepared, answer_one, fallback_answer, parse_dialog
 from probe import log_env, platform_probe, run_stats, wait_for_llm
@@ -106,13 +106,19 @@ def main() -> None:
     failed: list[int] = []
     lock = threading.Lock()
 
+    levels: list[int | None] = [None] * n   # уровень итогового ответа (None — запасной); для RUN STATS и B8
+
     def work(i: int) -> tuple[int, str | None]:
         try:
             level = choose_level()
             if level == 0:
                 runtime.FLAGS.inc("skipped")
                 return i, None
-            ans = answer_one(kb, index, questions[i][1], preps[i], level)
+            info: dict = {}
+            t_q = time.monotonic()
+            ans = answer_one(kb, index, questions[i][1], preps[i], level, info=info)
+            levels[i] = info.get("level", level)
+            runtime.TIMING.add(f"q{levels[i]}", time.monotonic() - t_q)   # время вопроса на уровне (B7)
             runtime.FLAGS.inc("llm_ok")
             return i, ans
         except Exception as exc:  # noqa: BLE001
@@ -153,12 +159,56 @@ def main() -> None:
         write_submission(questions, answers)
         if len(failed) == before:  # ничего не получилось — подождать, прежде чем пробовать снова
             time.sleep(min(20.0, max(0.0, remaining() - 60)))
+    if FINAL_PASS:
+        final_pass(kb, index, questions, preps, answers, levels, failed)
     runtime.FLAGS.stats["fallback"] = len(failed)
     write_submission(questions, answers)
-    run_stats(n, len(failed), rounds)
+    run_stats(n, len(failed), rounds, levels)
     log(f"Готово: {runtime.FLAGS.stats}, tiny={runtime.FLAGS.tiny}, chat≈{runtime.TIMING.get('chat_full', 0):.1f} c (полный) / "
         f"{runtime.TIMING.get('chat_compact', 0):.1f} c (компактный) / {runtime.TIMING.get('chat_min', 0):.1f} c (минимальный), "
         f"dense={runtime.FLAGS.dense}, compact={runtime.FLAGS.compact}, minimal={runtime.FLAGS.minimal}, rerank_off={runtime.FLAGS.rerank_off}")
+
+
+def final_pass(kb, index, questions, preps, answers: list, levels: list, failed: list) -> None:
+    """B8: пока есть время — переответ на полном уровне: сначала вопросы с запасным ответом, затем отвеченные на
+    коротком запросе (tiny), уровнях 1, 2, 3. Ответ заменяется только успешным новым."""
+    f = runtime.FLAGS
+    if f.tiny:
+        return
+    target = 1 if f.minimal else (2 if f.compact else 4)
+    rank = {None: 0, 0: 1, 1: 2, 2: 3, 3: 4}
+    cands = sorted((i for i in range(len(questions)) if levels[i] is None or levels[i] < target),
+                   key=lambda i: (rank.get(levels[i], 9), i))
+    if not cands:
+        return
+    log(f"Финальный проход: {len(cands)} вопросов на уровень {target}, осталось {remaining():.0f} c")
+
+    def upgrade(i: int) -> tuple[int, str | None, int | None]:
+        info: dict = {}
+        t_q = time.monotonic()
+        try:
+            ans = answer_one(kb, index, questions[i][1], preps[i], target, info=info)
+        except Exception as exc:  # noqa: BLE001
+            log(f"Вопрос {questions[i][0]}: переответ не удался ({type(exc).__name__})")
+            return i, None, None
+        lv = info.get("level", target)
+        runtime.TIMING.add(f"q{lv}", time.monotonic() - t_q)
+        return i, ans, lv
+
+    upgraded, pos = 0, 0
+    while pos < len(cands) and remaining() - 15 > question_cost(target) * 1.2:
+        batch = cands[pos: pos + MAX_WORKERS]
+        pos += len(batch)
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+            for i, ans, lv in pool.map(upgrade, batch):
+                if ans and (levels[i] is None or (lv is not None and lv > levels[i])):
+                    answers[i], levels[i] = ans, lv
+                    upgraded += 1
+                    if i in failed:
+                        failed.remove(i)
+        write_submission(questions, answers)
+    f.stats["final_pass_upgraded"] = f.stats.get("final_pass_upgraded", 0) + upgraded
+    log(f"Финальный проход: повышено {upgraded}, осталось {remaining():.0f} c")
 
 
 if __name__ == "__main__":

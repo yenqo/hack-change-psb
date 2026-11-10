@@ -135,5 +135,55 @@ class SoftDegradeTest(unittest.TestCase):
         self.assertEqual(res["stats"].get("level4", 0), 0)
 
 
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class RerankRecheckTest(unittest.TestCase):
+    """B6: реранкер после тайм-аутов отключается временно; после неустранимых ошибок — навсегда."""
+
+    def run_sc(self, sc: str, on: bool) -> dict:
+        return golden_runner.run_subprocess("root", sc, {"SIM": "1", "SIM_N": "30", "SIM_WORKERS": "2",
+                                                         "SOLUTION_RERANK_RECHECK": "1" if on else "0"})
+
+    def test_timeouts_temporary(self) -> None:
+        old = self.run_sc("rerank_timeout", False)["stats"].get("rerank_ok", 0)
+        new = self.run_sc("rerank_timeout", True)["stats"].get("rerank_ok", 0)
+        self.assertGreater(new, old)
+
+    def test_permanent_errors_stay_off(self) -> None:
+        res = golden_runner.run_subprocess("root", "no_dense", {"SOLUTION_RERANK_RECHECK": "1"})
+        self.assertTrue(res["flags"]["rerank_off"])
+        self.assertEqual(len(res["rerank"]), 2)   # как в v1.3: две ошибки 404 — и больше не вызывается
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class TimeBudgetTest(unittest.TestCase):
+    """B7 (уровень по прогнозу) и B8 (финальный проход): больше ответов на полном уровне в пределах бюджета."""
+
+    def sim(self, n: int, w: int, **flags) -> dict:
+        env = {"SIM": "1", "SIM_N": str(n), "SIM_WORKERS": str(w), **{k: str(v) for k, v in flags.items()}}
+        res = golden_runner.run_subprocess("root", "normal", env)
+        return res["sim"]
+
+    def test_forecast_uses_time(self) -> None:
+        old = self.sim(100, 1)
+        new = self.sim(100, 1, SOLUTION_LEVEL_FORECAST=1)
+        self.assertGreater(new["levels"]["4"], old["levels"]["4"])
+        self.assertLess(new["elapsed"], 990)
+
+    def test_final_pass_upgrades(self) -> None:
+        old = self.sim(200, 2, SOLUTION_LEVEL_FORECAST=1)
+        new = self.sim(200, 2, SOLUTION_LEVEL_FORECAST=1, SOLUTION_FINAL_PASS=1)
+        self.assertGreaterEqual(new["levels"]["4"], old["levels"]["4"])
+        self.assertLessEqual(new["levels"]["fallback"], old["levels"]["fallback"])
+        self.assertLess(new["elapsed"], 1100)   # лимит платформы — 1200 c
+
+    def test_run_stats_levels(self) -> None:
+        import re
+        res = golden_runner.run_subprocess("root", "normal", {})
+        m = re.search(r"=== RUN STATS ===\n(.*?)\n=== /RUN STATS ===", res["_stderr"], re.S)
+        stats = json.loads(m.group(1))
+        self.assertEqual(stats["answer_levels"]["4"], 18)
+        self.assertIn("soft4xx", stats["triggers"])
+
+
 if __name__ == "__main__":
     unittest.main()

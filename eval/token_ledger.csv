@@ -26,3 +26,6 @@ ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached
 2026-11-10 21:37:58,dev_smoke,прогон current smoke_sub5_repro,deepseek-v4.1-flash,7,56241,566,56807,0
 2026-11-10 21:38:28,dev_smoke,прогон current smoke_sub5_repro,deepseek-v4.1-flash,11,100650,1138,101788,0
 2026-11-10 21:38:29,dev_smoke,прогон current smoke_sub5_repro,deepseek-v4.1-flash,1,8869,128,8997,0
+2026-11-10 23:21:01,dev_smoke,прогон current smoke_robust_build,deepseek-v4.1-flash,6,47343,485,47828,10368
+2026-11-10 23:21:31,dev_smoke,прогон current smoke_robust_build,deepseek-v4.1-flash,8,74183,1118,75301,0
+2026-11-10 23:21:52,dev_smoke,прогон current smoke_robust_build,deepseek-v4.1-flash,5,44234,655,44889,0

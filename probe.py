@@ -166,7 +166,7 @@ def _pct(v: list[float], p: float) -> float | None:
     return round(v[lo] + (v[hi] - v[lo]) * (k - lo), 2)
 
 
-def run_stats(n_questions: int, failed: int, rounds: int) -> None:
+def run_stats(n_questions: int, failed: int, rounds: int, levels: list | None = None) -> None:
     """Блок RUN STATS в конце прогона. Никогда не бросает исключений."""
     if not PROBE:
         return
@@ -183,6 +183,12 @@ def run_stats(n_questions: int, failed: int, rounds: int) -> None:
         emit("RUN STATS", {
             "elapsed_sec": round(time.monotonic() - T0, 1), "questions": n_questions, "fallback_answers": failed,
             "retry_rounds": rounds, "calls": calls, "usage": usage, "stats": dict(f.stats),
+            "answer_levels": None if levels is None else {
+                "4": levels.count(4), "3": levels.count(3), "2": levels.count(2), "1": levels.count(1),
+                "0_tiny": levels.count(0), "fallback": levels.count(None)},
+            "triggers": {k: f.stats.get(k, 0) for k in ("soft4xx", "rerank_disabled", "rerank_recheck",
+                                                        "final_pass_upgraded", "repaired", "trimmed", "ref_trimmed",
+                                                        "skipped")},
             "flags": {"dense": f.dense, "rerank_off": f.rerank_off, "compact": f.compact, "minimal": f.minimal,
                       "tiny": f.tiny},
             "timing_ema_sec": {k: round(v, 2) for k, v in runtime.TIMING.ema.items()},

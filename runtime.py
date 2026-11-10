@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
-from config import MAX_WORKERS, remaining
+from config import LEVEL_FORECAST, MAX_WORKERS, remaining
 
 
 class Flags:
@@ -23,6 +23,9 @@ class Flags:
         self.tiny = False              # прокси отклонил и минимальный — запрос размером со стартовый пример
         self.soft4xx_streak = 0        # B5: вопросов подряд с повторным 4xx (не «слишком велик»)
         self.degraded_at = -1          # B5: номер завершённого вопроса, когда понизили режим (для повторной пробы)
+        self.rerank_off_at = None      # B6: когда реранкер временно отключён (время, номер вопроса)
+        self.rerank_off_q = 0
+        self.rerank_off_permanent = False
         self.stats = {"llm_ok": 0, "fallback": 0, "repaired": 0, "trimmed": 0, "rerank_ok": 0,
                       "level4": 0, "level3": 0, "level2": 0, "level1": 0, "skipped": 0}
 
@@ -49,6 +52,10 @@ class Timing:
     def get(self, key: str, default: float) -> float:
         with self.lock:
             return self.ema.get(key, default)
+
+    def drop(self, key: str) -> None:
+        with self.lock:
+            self.ema.pop(key, None)
 
 
 TIMING = Timing()
@@ -83,9 +90,42 @@ def per_question_budget() -> float:
     return max(0.0, remaining() - 15) * MAX_WORKERS / left
 
 
+def question_cost(level: int) -> float:
+    """Ожидаемое время одного вопроса на уровне (с реранкером и исправлением): скользящее среднее фактических
+    длительностей вопросов, пока его нет — оценка по времени вызова модели."""
+    full = TIMING.get("chat_full", 8.0)
+    comp = TIMING.get("chat_compact", full * 0.6)
+    mini = TIMING.get("chat_min", comp * 0.7)
+    rr = 0.0 if FLAGS.rerank_off else TIMING.get("rerank", 2.0)
+    default = {4: (full + rr) * 1.3, 3: full * 1.1, 2: comp * 1.05, 1: mini, 0: mini * 0.5}[level]
+    return TIMING.get(f"q{level}", default)
+
+
+def _choose_level_forecast() -> int:
+    """B7: самый высокий уровень, при котором «оставшиеся вопросы × время вопроса / MAX_WORKERS» с запасом 20%
+    укладывается в оставшееся время."""
+    full = TIMING.get("chat_full", 8.0)
+    comp = TIMING.get("chat_compact", full * 0.6)
+    mini = TIMING.get("chat_min", comp * 0.7)
+    rem = remaining() - 15
+    if rem < min(mini, 15.0):
+        return 0
+    if FLAGS.minimal:
+        return 1
+    with PROG.lock:
+        left = max(1, PROG.n - PROG.finished)
+    allowed = (2, 1) if FLAGS.compact else (4, 3, 2, 1)
+    for lv in allowed:
+        if left * question_cost(lv) / MAX_WORKERS * 1.2 <= rem:
+            return lv
+    return allowed[-1]
+
+
 def choose_level() -> int:
     """4 — реранкер + полный контекст + исправление чисел; 3 — полный контекст без реранкера;
     2 — компактный контекст; 1 — минимальный контекст; 0 — времени не осталось (запасной ответ)."""
+    if LEVEL_FORECAST:
+        return _choose_level_forecast()
     full = TIMING.get("chat_full", 8.0)
     comp = TIMING.get("chat_compact", full * 0.6)
     mini = TIMING.get("chat_min", comp * 0.7)
