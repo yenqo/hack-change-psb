@@ -105,6 +105,23 @@ class HttpTest(unittest.TestCase):
             with self.assertRaises(self.core.APIError):
                 self.core.post_json("/x", "", {})
 
+    def test_call_stats(self) -> None:
+        if not hasattr(self.core, "CALLS"):
+            self.skipTest("счётчика вызовов нет в v1.3")
+        calls = self.core.CALLS
+        before = calls.kinds.get("x", {}).get("attempts", 0)
+        usage_before = calls.usage["prompt_tokens"]
+        body = {"ok": 1, "usage": {"prompt_tokens": 100, "completion_tokens": 5,
+                                   "prompt_tokens_details": {"cached_tokens": 64}}}
+        with self.proxy([(429, {}, {"retry-after": "0"}), (503, {}, None), (200, body, None)]):
+            self.core.post_json("/x", "k", {}, attempts=3)
+        k = calls.kinds["x"]
+        self.assertEqual(k["attempts"] - before, 3)
+        self.assertGreaterEqual(k["outcomes"]["http_429"], 1)
+        self.assertGreaterEqual(k["outcomes"]["http_5xx"], 1)
+        self.assertEqual(calls.usage["prompt_tokens"] - usage_before, 100)
+        self.assertIn("prompt_tokens_details.cached_tokens", calls.usage_keys)
+
     # --- chat ---------------------------------------------------------------
     def test_chat_payload_and_think(self) -> None:
         with self.proxy([(200, self.chat_body("<think>x</think> Ответ."), None)]) as seen:

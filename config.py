@@ -69,6 +69,11 @@ OUTPUT_FILE = "submission.csv"
 DEBUG = env("SOLUTION_DEBUG", "") == "1"   # локальная отладка: пишет debug.jsonl с контекстом и черновиками
 DEBUG_LOCK = threading.Lock()
 
+# Доработка 7.5: блоки PLATFORM PROBE и RUN STATS в stderr (ответы не меняет). SOLUTION_PROBE=0 — выключить.
+PROBE = env("SOLUTION_PROBE", "1") != "0"
+# Пробный вызов /rerank для PLATFORM PROBE: только локально (логов платформы нет — на ней он бесполезен).
+PROBE_RERANK = env("SOLUTION_PROBE_RERANK", "") == "1"
+
 # Текущая дата для промпта. SOLUTION_TODAY (ГГГГ-ММ-ДД) фиксирует её в тестах; на платформе не задаётся.
 SOLUTION_TODAY = env("SOLUTION_TODAY")
 

@@ -33,7 +33,8 @@ def main() -> None:
     harness.FIXTURES.mkdir(exist_ok=True)
     for sc in golden_runner.SCENARIOS:
         res = golden_runner.run_subprocess("baseline", sc)
-        res.pop("_elapsed", None)
+        for k in ("_elapsed", "_stderr", "probe_rerank_calls"):
+            res.pop(k, None)
         write_json(harness.FIXTURES / f"golden_{sc}.json.gz", res)
     core = harness.load_core("baseline")
     write_json(harness.FIXTURES / "characterization.json", characterization.snapshot(core))

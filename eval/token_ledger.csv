@@ -10,3 +10,11 @@ ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached
 2026-11-10 17:00:31,3_stand,диагностика,deepseek-v4.1-flash,2,112,10,122,0
 2026-11-10 17:01:14,3_stand,прогон current smoke,deepseek-v4.1-flash,5,37851,633,38484,0
 2026-11-10 17:01:34,3_stand,судья,deepseek-v4.1-flash,6,4788,408,5196,0
+2026-11-10 17:17:53,dev_smoke,прогон current smoke_dense_current,deepseek-v4.1-flash,4,29645,295,29940,0
+2026-11-10 17:18:23,dev_smoke,прогон current smoke_dense_current,deepseek-v4.1-flash,8,73305,1506,74811,0
+2026-11-10 17:18:51,dev_smoke,прогон current smoke_dense_current,deepseek-v4.1-flash,7,62810,899,63709,0
+2026-11-10 17:19:21,dev_smoke,прогон starter starter_5650eee10be6,deepseek-v4.1-flash,6,5194,451,5645,0
+2026-11-10 17:19:51,dev_smoke,прогон starter starter_5650eee10be6,deepseek-v4.1-flash,9,7290,958,8248,0
+2026-11-10 17:19:56,dev_smoke,прогон starter starter_5650eee10be6,deepseek-v4.1-flash,2,1803,178,1981,0
+2026-11-10 17:21:45,dev_smoke,судья,deepseek-v4.1-flash,33,27322,2163,29485,0
+2026-11-10 17:22:57,dev_smoke,судья,deepseek-v4.1-flash,3,2566,220,2786,0

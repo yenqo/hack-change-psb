@@ -29,7 +29,7 @@ from kb import KB, build_kb, decode_bytes, find_questions
 from runtime import choose_level
 from index import Index, embed_questions
 from pipeline import Prepared, answer_one, fallback_answer, parse_dialog
-from probe import log_env, wait_for_llm
+from probe import log_env, platform_probe, run_stats, wait_for_llm
 
 
 def load_questions(path: Path) -> list[tuple[str, str]]:
@@ -86,14 +86,20 @@ def main() -> None:
 
     if not API_BASE or not LLM_KEY:
         log("Нет доступа к API — остаются запасные ответы")
+        platform_probe(kb, questions, index, None, None)
+        run_stats(n, n, 0)
         return
 
     preps = [Prepared(*parse_dialog(q)) for _, q in questions]
-    wait_for_llm()  # эмбеддинги строим после того, как прокси ответил
+    llm_ready = wait_for_llm()  # эмбеддинги строим после того, как прокси ответил
+    dense_sec = None
     if kb.chunks:
+        t_dense = time.monotonic()
         index.build_dense(cap=60.0)
+        dense_sec = round(time.monotonic() - t_dense, 1)
         if index.vecs is not None:
             embed_questions(preps)
+    platform_probe(kb, questions, index, llm_ready, dense_sec)
 
     runtime.PROG.n = n
     failed: list[int] = []
@@ -148,6 +154,7 @@ def main() -> None:
             time.sleep(min(20.0, max(0.0, remaining() - 60)))
     runtime.FLAGS.stats["fallback"] = len(failed)
     write_submission(questions, answers)
+    run_stats(n, len(failed), rounds)
     log(f"Готово: {runtime.FLAGS.stats}, tiny={runtime.FLAGS.tiny}, chat≈{runtime.TIMING.get('chat_full', 0):.1f} c (полный) / "
         f"{runtime.TIMING.get('chat_compact', 0):.1f} c (компактный) / {runtime.TIMING.get('chat_min', 0):.1f} c (минимальный), "
         f"dense={runtime.FLAGS.dense}, compact={runtime.FLAGS.compact}, minimal={runtime.FLAGS.minimal}, rerank_off={runtime.FLAGS.rerank_off}")

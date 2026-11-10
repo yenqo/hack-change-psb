@@ -39,6 +39,7 @@ SCENARIOS = ["normal", "fabricated", "reject_full", "reject_compact", "tiny", "t
 FULL_LIMIT = 20000
 COMPACT_LIMIT = 10000
 PROBE = "Ответь одним словом: готов."
+PROBE_RERANK_QUERY = "налог на прибыль"
 FABRICATED = " Срок рассмотрения составляет 37 рабочих дней. Штраф — 123 456 рублей. Документ подписан 31.12.2019."
 
 
@@ -53,6 +54,7 @@ class FakeProxy:
         self.embed_calls: list[str] = []
         self.failed_once: set[str] = set()
         self.rerank_seen = 0
+        self.probe_rerank = 0
 
     # -- запись -------------------------------------------------------------
     def _keep(self, text: str) -> str:
@@ -146,6 +148,10 @@ class FakeProxy:
 
     def _rerank(self, payload: dict) -> dict:
         q, docs, top_n = payload["query"], payload["documents"], payload["top_n"]
+        if q == PROBE_RERANK_QUERY:  # пробный вызов PLATFORM PROBE (7.5): отвечаем, в сценарии не учитываем
+            self.probe_rerank += 1
+            scored = sorted(((i, harness.fake_rerank_score(q, d)) for i, d in enumerate(docs)), key=lambda x: -x[1])
+            return {"id": "stub", "results": [{"index": i, "relevance_score": s} for i, s in scored[:top_n]]}
         self.rerank_calls.append({"query": self._keep(q), "docs": harness.sha(json.dumps(docs, ensure_ascii=False)),
                                   "n_docs": len(docs), "top_n": top_n, "model": payload.get("model")})
         self.rerank_seen += 1
@@ -187,6 +193,7 @@ def run(which: str, scenario: str) -> dict:
             "flags": {"compact": flags.compact, "minimal": flags.minimal, "tiny": flags.tiny,
                       "rerank_off": flags.rerank_off, "dense": flags.dense},
             "texts": dict(sorted(proxy.texts.items())),
+            "probe_rerank_calls": proxy.probe_rerank,
             "_elapsed": round(elapsed, 1),
         }
     finally:
@@ -194,19 +201,21 @@ def run(which: str, scenario: str) -> dict:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def run_subprocess(which: str, scenario: str) -> dict:
-    """Прогон в отдельном процессе с фиксированным PYTHONHASHSEED."""
+def run_subprocess(which: str, scenario: str, env_extra: dict | None = None) -> dict:
+    """Прогон в отдельном процессе с фиксированным PYTHONHASHSEED. В результат добавляется stderr прогона."""
     import subprocess
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         out = tmp.name
     try:
-        env = dict(os.environ, PYTHONHASHSEED="0")
+        env = dict(os.environ, PYTHONHASHSEED="0", **(env_extra or {}))
         proc = subprocess.run([sys.executable, __file__, "--target", which, "--scenario", scenario, "--out", out],
                               env=env, capture_output=True, text=True, timeout=600)
         if proc.returncode != 0:
             raise RuntimeError(f"golden_runner {which}/{scenario} упал:\n{proc.stderr[-4000:]}")
         with open(out, encoding="utf-8") as f:
-            return json.load(f)
+            res = json.load(f)
+        res["_stderr"] = proc.stderr
+        return res
     finally:
         os.unlink(out)
 

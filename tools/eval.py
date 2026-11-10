@@ -100,7 +100,8 @@ def make_tagger(rows: list[dict]):
     keys = sorted(((current_turn(r["question"]), r["id"]) for r in rows), key=lambda x: -len(x[0]))
 
     def tag(payload: dict):
-        text = "\n".join(str(m.get("content", "")) for m in payload.get("messages", []))
+        # системный промпт не смотрим: в нём few-shot примеры с текстами демо-вопросов
+        text = "\n".join(str(m.get("content", "")) for m in payload.get("messages", []) if m.get("role") != "system")
         for cur, qid in keys:
             if cur and cur in text:
                 return qid
@@ -256,6 +257,11 @@ class Judge:
         self.usage = devenv.Usage(stage, "судья" + ("" if use_cache else " без кэша"))
         self.errors = 0
         self.lock = threading.Lock()
+        self.notes: dict[str, int] = {}
+
+    def _note(self, msg: str) -> None:
+        with self.lock:
+            self.notes[msg] = self.notes.get(msg, 0) + 1
 
     def one(self, question: str, expected: str, a: str, b: str, order: str) -> dict | None:
         key = dev_proxy.sha([JUDGE_VERSION, self.model, question, expected, a, b, order])
@@ -267,16 +273,20 @@ class Judge:
             status, data, _ = self.up.chat({"model": self.model, "messages": judge_messages(question, expected, a, b),
                                             "temperature": 0, "max_tokens": 300})
             if status >= 300:
+                err = data.get("error") if isinstance(data, dict) else None
+                self._note(f"HTTP {status} {(err.get('message') if isinstance(err, dict) else err) or ''}"[:120])
                 time.sleep(3)
                 continue
             self.usage.add(self.model, data.get("usage"))
             try:
-                res = parse_judge(data["choices"][0]["message"]["content"])
+                content = data["choices"][0]["message"]["content"]
+                res = parse_judge(content)
             except (KeyError, IndexError, TypeError):
-                res = None
+                content, res = None, None
             if res is not None:
                 self.cache.put("judge", key, res)
                 return res
+            self._note(f"не разобран ответ: {str(content)[:80]!r}")
         with self.lock:
             self.errors += 1
         return None
@@ -307,10 +317,13 @@ def judge_run(label: str, stage: str, use_cache: bool = True, out_suffix: str = 
         results = list(pool.map(lambda r: judge.question(r, run["answers"][r["id"]], base[r["id"]]), rows))
     judge.usage.flush()
     out = {"label": label, "judge": JUDGE_VERSION, "model": judge.model, "cache": use_cache, "errors": judge.errors,
+           "error_notes": judge.notes,
            "tokens": judge.usage.total(), "q": {r["id"]: res for r, res in zip(rows, results)}}
     (RUNS / f"{label}.judge{out_suffix}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
                                                           encoding="utf-8")
     print(f"[{label}] судья{'' if use_cache else ' без кэша'}: ошибок {judge.errors}", flush=True)
+    for msg, n in sorted(judge.notes.items(), key=lambda x: -x[1])[:5]:
+        print(f"    сбой судьи ×{n}: {msg}", flush=True)
     return out
 
 

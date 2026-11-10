@@ -96,6 +96,7 @@ def post_json(path: str, key: str, payload: dict, timeout: float = 90.0, attempt
             raise APIError(f"не осталось времени ({last})", transient=True)
         GATE.acquire()
         status = -1
+        t_req = time.monotonic()
         try:
             # Как в стартовом примере организаторов: отдельный клиент на запрос, без переиспользования соединений.
             with httpx.Client(timeout=httpx.Timeout(t, connect=min(15.0, t))) as http:
@@ -106,12 +107,25 @@ def post_json(path: str, key: str, payload: dict, timeout: float = 90.0, attempt
             r = None
         finally:
             GATE.release(status)
+        kind = path.strip("/").split("/")[-1]
+        sec = time.monotonic() - t_req
+        if r is None:
+            runtime.CALLS.attempt(kind, "timeout" if "Timeout" in last else "transport", sec)
+        elif status >= 300:
+            runtime.CALLS.attempt(kind, "http_429" if status == 429 else ("http_5xx" if status >= 500 else
+                                                                          f"http_{status}"), sec)
         if r is not None:
             if status < 300:
                 try:
-                    return r.json()
+                    data = r.json()
                 except ValueError:
                     last = "bad json"
+                    runtime.CALLS.attempt(kind, "bad_json", sec)
+                else:
+                    runtime.CALLS.attempt(kind, "ok", sec)
+                    if isinstance(data, dict):
+                        runtime.CALLS.add_usage(data.get("usage"))
+                    return data
             elif status == 429:
                 last = "HTTP 429"
                 ra = r.headers.get("retry-after", "")

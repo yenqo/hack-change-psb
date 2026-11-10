@@ -102,3 +102,41 @@ def choose_level() -> int:
     if per_q >= comp * 1.15:
         return 2
     return 1
+
+
+class CallStats:
+    """Статистика вызовов прокси для RUN STATS: попытки по типам, статусы, задержки, usage. Только учёт —
+    на логику ядра не влияет."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.kinds: dict[str, dict] = {}
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "with_usage": 0}
+        self.usage_keys: set[str] = set()
+
+    def attempt(self, kind: str, outcome: str, sec: float) -> None:
+        with self.lock:
+            k = self.kinds.setdefault(kind, {"attempts": 0, "outcomes": {}, "lat": []})
+            k["attempts"] += 1
+            k["outcomes"][outcome] = k["outcomes"].get(outcome, 0) + 1
+            if outcome == "ok":
+                k["lat"].append(sec)
+
+    def add_usage(self, usage) -> None:
+        if not isinstance(usage, dict):
+            return
+        with self.lock:
+            self.usage_keys.update(usage.keys())
+            details = usage.get("prompt_tokens_details")
+            if isinstance(details, dict):
+                self.usage_keys.update(f"prompt_tokens_details.{x}" for x in details)
+            self.usage["with_usage"] += 1
+            self.usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
+            self.usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+            hit = usage.get("prompt_cache_hit_tokens")
+            if hit is None and isinstance(details, dict):
+                hit = details.get("cached_tokens")
+            self.usage["cached_tokens"] += int(hit or 0)
+
+
+CALLS = CallStats()

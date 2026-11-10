@@ -21,7 +21,7 @@ ALLOWED_THIRD_PARTY = {"httpx"}
 STDLIB = set(getattr(sys, "stdlib_module_names", ())) or {
     "__future__", "argparse", "array", "base64", "builtins", "collections", "concurrent", "contextlib", "copy", "csv",
     "dataclasses", "datetime", "enum", "functools", "gzip", "hashlib", "heapq", "io", "itertools", "json", "logging",
-    "math", "operator", "os", "pathlib", "random", "re", "shutil", "statistics", "string", "struct", "subprocess",
+    "math", "operator", "os", "pathlib", "platform", "sqlite3", "http", "urllib", "socket", "ssl", "glob", "signal", "fnmatch", "bisect", "decimal", "fractions", "pickle", "shlex", "inspect", "random", "re", "shutil", "statistics", "string", "struct", "subprocess",
     "sys", "tempfile", "textwrap", "threading", "time", "traceback", "types", "typing", "unicodedata", "uuid",
     "warnings", "xml", "zipfile", "zlib",
 }

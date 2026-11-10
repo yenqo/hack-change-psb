@@ -66,6 +66,7 @@ class Usage:
         self.stage, self.purpose = stage, purpose
         self.by_model: dict[str, dict[str, int]] = {}
         self.lock = threading.Lock()
+        self.cumulative = 0   # всего токенов с создания (flush не сбрасывает)
 
     def add(self, model: str, usage: dict | None) -> None:
         usage = usage or {}
@@ -78,10 +79,11 @@ class Usage:
             m["prompt_tokens"] += pt
             m["completion_tokens"] += ct
             m["total_tokens"] += int(usage.get("total_tokens") or (pt + ct))
+            self.cumulative += int(usage.get("total_tokens") or (pt + ct))
             m["cached_tokens"] += cached_tokens(usage)
 
     def total(self) -> int:
-        return sum(m["total_tokens"] for m in self.by_model.values())
+        return self.cumulative
 
     def flush(self) -> None:
         with self.lock:
