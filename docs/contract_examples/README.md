@@ -5,12 +5,12 @@
 
 | файл | пример | статус | цитат |
 |---|---|---|---|
-| `answer_answer_fact.json` | answer | answer | 3 |
+| `answer_answer_fact.json` | answer | answer | 2 |
 | `answer_no_info.json` | no_info | no_info | 0 |
 | `answer_premise_error.json` | premise_error | premise_error | 2 |
-| `answer_edition_on_date.json` | answer | premise_error | 2 |
-| `answer_clarify_ambiguous.json` | clarify | clarify | 3 |
-| `answer_dialog.json` | answer | answer | 1 |
-| `answer_injection_in_question.json` | answer | partial | 2 |
+| `answer_edition_on_date.json` | answer | answer | 1 |
+| `answer_clarify_ambiguous.json` | clarify | clarify | 2 |
+| `answer_dialog.json` | answer | partial | 1 |
+| `answer_injection_in_question.json` | answer | premise_error | 1 |
 
 Также: `list_documents.json`, `document_<doc_id>.json`, `health.json`.

@@ -29,3 +29,36 @@ ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached
 2026-11-10 23:21:01,dev_smoke,прогон current smoke_robust_build,deepseek-v4.1-flash,6,47343,485,47828,10368
 2026-11-10 23:21:31,dev_smoke,прогон current smoke_robust_build,deepseek-v4.1-flash,8,74183,1118,75301,0
 2026-11-10 23:21:52,dev_smoke,прогон current smoke_robust_build,deepseek-v4.1-flash,5,44234,655,44889,0
+2026-11-11 00:44:46,dev_smoke,судья,deepseek-v4.1-flash,36,27836,2435,30271,0
+2026-11-11 00:45:33,dev_smoke,судья,deepseek-v4.1-flash,36,29324,2354,31678,0
+2026-11-11 00:46:19,dev_smoke,судья,deepseek-v4.1-flash,36,27272,2348,29620,0
+2026-11-11 00:47:00,dev_smoke,судья,deepseek-v4.1-flash,36,29592,2421,32013,0
+2026-11-11 00:48:30,dev_smoke,судья,deepseek-v4.1-flash,36,27540,2466,30006,0
+2026-11-11 00:50:19,dev_smoke,судья,deepseek-v4.1-flash,36,30700,2330,33030,0
+2026-11-11 00:50:59,dev_smoke,судья,deepseek-v4.1-flash,36,28648,2354,31002,0
+2026-11-11 00:51:43,dev_smoke,судья,deepseek-v4.1-flash,36,30136,2300,32436,0
+2026-11-11 00:52:28,dev_smoke,судья,deepseek-v4.1-flash,36,28084,2421,30505,0
+2026-11-11 00:53:11,dev_smoke,судья,deepseek-v4.1-flash,36,30404,2323,32727,0
+2026-11-11 00:53:56,dev_smoke,судья,deepseek-v4.1-flash,36,28352,2353,30705,0
+2026-11-11 01:00:28,9_B9,прогон current smoke_concise_r1,deepseek-v4.1-flash,10,84894,648,85542,0
+2026-11-11 01:00:50,9_B9,прогон current smoke_concise_r1,deepseek-v4.1-flash,9,82360,818,83178,0
+2026-11-11 01:01:37,9_B9,судья,deepseek-v4.1-flash,36,29188,2277,31465,0
+2026-11-11 01:02:19,9_B9,судья,deepseek-v4.1-flash,36,28376,2275,30651,0
+2026-11-11 01:03:55,9_B9,судья,deepseek-v4.1-flash,36,27136,2390,29526,0
+2026-11-11 01:05:04,9_B9,судья,deepseek-v4.1-flash,36,26324,2347,28671,0
+2026-11-11 01:07:36,9_B9,прогон current smoke_concise_r2,deepseek-v4.1-flash,9,76059,664,76723,48256
+2026-11-11 01:08:06,9_B9,прогон current smoke_concise_r2,deepseek-v4.1-flash,9,82243,737,82980,70912
+2026-11-11 01:08:07,9_B9,прогон current smoke_concise_r2,deepseek-v4.1-flash,1,8952,183,9135,8832
+2026-11-11 01:15:32,9_B9,судья,deepseek-v4.1-flash,36,29262,2338,31600,0
+2026-11-11 01:16:14,9_B9,судья,deepseek-v4.1-flash,36,28458,2340,30798,0
+2026-11-11 01:16:59,9_B9,судья,deepseek-v4.1-flash,36,27210,2255,29465,0
+2026-11-11 01:17:42,9_B9,судья,deepseek-v4.1-flash,36,26398,2280,28678,0
+2026-11-11 01:18:12,9_B9,прогон current smoke_concise_r3,deepseek-v4.1-flash,10,84894,692,85586,29440
+2026-11-11 01:18:33,9_B9,прогон current smoke_concise_r3,deepseek-v4.1-flash,9,82360,692,83052,37120
+2026-11-11 01:19:15,9_B9,судья,deepseek-v4.1-flash,36,28968,2347,31315,0
+2026-11-11 01:19:58,9_B9,судья,deepseek-v4.1-flash,36,28156,2401,30557,0
+2026-11-11 01:20:42,9_B9,судья,deepseek-v4.1-flash,36,26916,2411,29327,0
+2026-11-11 01:21:27,9_B9,судья,deepseek-v4.1-flash,36,26104,2400,28504,0
+2026-11-11 12:56:06,10_contract,примеры контракта,deepseek-v4.1-flash,1,8840,80,8920,0
+2026-11-11 12:56:36,10_contract,примеры контракта,deepseek-v4.1-flash,3,28254,232,28486,0
+2026-11-11 12:57:02,10_contract,примеры контракта,deepseek-v4.1-flash,3,26788,386,27174,0

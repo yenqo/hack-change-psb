@@ -59,6 +59,13 @@ class PendingTest(unittest.TestCase):
         self.assertEqual(run_py(code, {"SOLUTION_FEWSHOT": "fictional"}), "True False")
         self.assertEqual(run_py(code, {"SOLUTION_FEWSHOT": "demo"}), "False True")
 
+    def test_concise_flag(self) -> None:
+        code = ("import prompts; t = prompts.SYSTEM_TEXT; print('20–60 слов' in t, '30–120 слов' in t, "
+                "'Отвечай только на заданный вопрос' in t, 'Кедр' in t)")
+        self.assertEqual(run_py(code, {"SOLUTION_CONCISE": "1"}), "True False True False")
+        self.assertEqual(run_py(code, {"SOLUTION_CONCISE": "0"}), "False True False False")
+        self.assertEqual(run_py(code, {"SOLUTION_CONCISE": "1", "SOLUTION_FEWSHOT": "fictional"}), "True False True True")
+
     # --- B3 -----------------------------------------------------------------
     def test_b3_flag(self) -> None:
         code = ("import checks; print([v for v, _, _ in checks.extract_numbers("

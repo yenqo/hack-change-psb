@@ -47,7 +47,8 @@ import dev_proxy  # noqa: E402
 import devenv  # noqa: E402
 
 EVAL = ROOT / "eval"
-SETS = {"golden": EVAL / "golden.csv", "smoke": EVAL / "smoke_demo.csv"}
+SETS = {"golden": EVAL / "golden.csv", "smoke": EVAL / "smoke_demo.csv",
+        "smoke_org": EVAL / "smoke_demo_org.csv"}   # смоук с эталонами организаторов (data/demo_output.csv)
 GOLDEN = SETS["golden"]   # переключается опцией --set
 RUNS = EVAL / "runs"
 REPORTS = EVAL / "reports"
@@ -211,7 +212,7 @@ def ensure_starter(rows: list[dict], stage: str) -> dict[str, str]:
 # Судья
 # ---------------------------------------------------------------------------
 
-JUDGE_VERSION = "j2"
+JUDGE_VERSION = "j2"   # по умолчанию; --judge-version j1 — строгий вариант (выдумка = всё, что не следует из эталона)
 JUDGE_SYSTEM = """Ты — строгий эксперт-юрист и оцениваешь ответы юридического ассистента банка. Ассистент обязан отвечать только по базе знаний: договоры и внутренние документы компании ООО «Меридиан» и статьи законов. Эталонный ответ составлен по этой базе и считается верным.
 
 Сравни два ответа (A и B) на вопрос пользователя, ориентируясь на эталон.
@@ -228,10 +229,21 @@ JUDGE_SYSTEM = """Ты — строгий эксперт-юрист и оцен�
 {"fabricated_a": true|false, "fabricated_b": true|false, "score_b_vs_a": 0.0|0.25|0.5|0.75|1.0, "reason": "одно короткое предложение"}"""
 
 
-def judge_messages(question: str, expected: str, a: str, b: str) -> list[dict]:
+JUDGE_SYSTEMS = {
+    "j2": JUDGE_SYSTEM,
+    "j1": JUDGE_SYSTEM.replace(
+        JUDGE_SYSTEM[JUDGE_SYSTEM.index("2. Отсутствие выдуманных фактов."):JUDGE_SYSTEM.index("\n3. Правильная реакция")],
+        "2. Отсутствие выдуманных фактов. Выдуманный факт — конкретное утверждение (число, срок, сумма, дата, норма, номер "
+        "пункта или документа), которое противоречит эталону либо не следует из эталона и вопроса и выглядит придуманным. "
+        "Дополнительные детали, согласующиеся с эталоном, выдумкой не считаются."),
+}
+assert JUDGE_SYSTEMS["j1"] != JUDGE_SYSTEMS["j2"]
+
+
+def judge_messages(question: str, expected: str, a: str, b: str, version: str = JUDGE_VERSION) -> list[dict]:
     user = (f"Вопрос пользователя:\n{question}\n\nЭталонный ответ:\n{expected}\n\n"
             f"Ответ A:\n{a}\n\nОтвет B:\n{b}")
-    return [{"role": "system", "content": JUDGE_SYSTEM}, {"role": "user", "content": user}]
+    return [{"role": "system", "content": JUDGE_SYSTEMS[version]}, {"role": "user", "content": user}]
 
 
 def parse_judge(text: str) -> dict | None:
@@ -249,7 +261,8 @@ def parse_judge(text: str) -> dict | None:
 
 
 class Judge:
-    def __init__(self, stage: str, use_cache: bool = True) -> None:
+    def __init__(self, stage: str, use_cache: bool = True, version: str = JUDGE_VERSION) -> None:
+        self.version = version
         self.up = dev_proxy.Upstream()
         self.cache = dev_proxy.Cache()
         self.use_cache = use_cache
@@ -264,13 +277,14 @@ class Judge:
             self.notes[msg] = self.notes.get(msg, 0) + 1
 
     def one(self, question: str, expected: str, a: str, b: str, order: str) -> dict | None:
-        key = dev_proxy.sha([JUDGE_VERSION, self.model, question, expected, a, b, order])
+        key = dev_proxy.sha([self.version, self.model, question, expected, a, b, order])
         if self.use_cache:
             hit = self.cache.get("judge", key)
             if hit is not None:
                 return hit
         for _ in range(3):
-            status, data, _ = self.up.chat({"model": self.model, "messages": judge_messages(question, expected, a, b),
+            status, data, _ = self.up.chat({"model": self.model, "messages": judge_messages(question, expected, a, b,
+                                                                                                self.version),
                                             "temperature": 0, "max_tokens": 300})
             if status >= 300:
                 err = data.get("error") if isinstance(data, dict) else None
@@ -308,15 +322,15 @@ class Judge:
                 "reasons": [r["reason"] for r in (r1, r2) if r]}
 
 
-def judge_run(label: str, stage: str, use_cache: bool = True, out_suffix: str = "") -> dict:
+def judge_run(label: str, stage: str, use_cache: bool = True, out_suffix: str = "", version: str = JUDGE_VERSION) -> dict:
     run = json.loads((RUNS / f"{label}.json").read_text(encoding="utf-8"))
     rows = [r for r in load_golden() if r["id"] in run["answers"]]
     base = ensure_starter(rows, stage)
-    judge = Judge(stage, use_cache)
+    judge = Judge(stage, use_cache, version)
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(lambda r: judge.question(r, run["answers"][r["id"]], base[r["id"]]), rows))
     judge.usage.flush()
-    out = {"label": label, "judge": JUDGE_VERSION, "model": judge.model, "cache": use_cache, "errors": judge.errors,
+    out = {"label": label, "judge": version, "model": judge.model, "cache": use_cache, "errors": judge.errors,
            "error_notes": judge.notes,
            "tokens": judge.usage.total(), "q": {r["id"]: res for r, res in zip(rows, results)}}
     (RUNS / f"{label}.judge{out_suffix}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
@@ -449,7 +463,7 @@ def primary(label: str) -> dict:
 
 
 def calibrate(stage: str, target: str = "v1_3", repeats: int = 3, prefix: str = "calib_v13") -> str:
-    if GOLDEN != SETS["golden"]:
+    if GOLDEN != SETS["golden"]:  # smoke / smoke_org
         raise SystemExit("Калибровка шума — только на golden set от продактов, не на смоук-наборе.")
     rows = load_golden()
     ensure_starter(rows, stage)
@@ -520,6 +534,7 @@ def main() -> int:
     p.add_argument("--label", required=True)
     p.add_argument("--stage", required=True)
     p.add_argument("--no-cache", action="store_true")
+    p.add_argument("--judge-version", default=JUDGE_VERSION, choices=["j1", "j2"])
     p = sub.add_parser("report")
     p.add_argument("--labels", required=True)
     p.add_argument("--name", required=True)
@@ -536,8 +551,8 @@ def main() -> int:
         if args.judge:
             judge_run(args.label, args.stage)
     elif args.cmd == "judge":
-        judge_run(args.label, args.stage, use_cache=not args.no_cache,
-                  out_suffix="_nocache" if args.no_cache else "")
+        suffix = ("_nocache" if args.no_cache else "") + ("" if args.judge_version == JUDGE_VERSION else f"_{args.judge_version}")
+        judge_run(args.label, args.stage, use_cache=not args.no_cache, out_suffix=suffix, version=args.judge_version)
     elif args.cmd == "report":
         labels = args.labels.split(",")
         REPORTS.mkdir(parents=True, exist_ok=True)

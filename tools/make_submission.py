@@ -4,6 +4,7 @@
     python tools/make_submission.py --no-check      # только собрать
     python tools/make_submission.py --python python3.11   # интерпретатор для чистого venv
     python tools/make_submission.py --stub-proxy    # прогон через локальную заглушку прокси (tools/stub_proxy.py)
+    python tools/make_submission.py --flag SOLUTION_CONCISE=1   # сборка-вариант: флаг включён только в архиве
 
 В архив попадают только: модули ядра, от которых зависит solution.py (плоско в корне), requirements.txt
 и готовый индекс index_*.json, если он есть. Ни одной вложенной папки.
@@ -66,18 +67,34 @@ def git_rev() -> str:
         return time.strftime("%Y%m%d%H%M")
 
 
-def build(out: Path | None = None) -> Path:
+def patch_flags(config_src: str, flags: dict[str, str]) -> str:
+    """Значения флагов по умолчанию в config.py — только в архиве (на платформе переменные окружения задать нельзя)."""
+    import re
+    for name, value in flags.items():
+        pat = re.compile(rf'env\("{re.escape(name)}", "[^"]*"\)')
+        if not pat.search(config_src):
+            raise SystemExit(f"флаг {name} не найден в config.py")
+        config_src = pat.sub(f'env("{name}", "{value}")', config_src)
+    return config_src
+
+
+def build(out: Path | None = None, flags: dict[str, str] | None = None) -> Path:
     files = [f"{m}.py" for m in core_closure()] + ["requirements.txt"] + sorted(p.name for p in ROOT.glob("index_*.json"))
     DIST.mkdir(exist_ok=True)
-    out = out or DIST / f"psb_submission_{git_rev()}.zip"
+    suffix = "".join(f"_{k.replace('SOLUTION_', '').lower()}{v}" for k, v in (flags or {}).items())
+    out = out or DIST / f"psb_submission_{git_rev()}{suffix}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for name in files:
             info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
-            z.writestr(info, (ROOT / name).read_bytes())
+            data = (ROOT / name).read_bytes()
+            if name == "config.py" and flags:
+                data = patch_flags(data.decode("utf-8"), flags).encode("utf-8")
+            z.writestr(info, data)
     size = out.stat().st_size
-    print(f"Собран {out.relative_to(ROOT)}: {len(files)} файлов, {size / 1024:.0f} КБ")
+    print(f"Собран {out.relative_to(ROOT)}: {len(files)} файлов, {size / 1024:.0f} КБ"
+          + (f"; флаги по умолчанию в архиве: {flags}" if flags else ""))
     for name in files:
         print(f"  {name}")
     if size > 128 * 1024 * 1024:
@@ -193,8 +210,11 @@ def main() -> int:
     ap.add_argument("--time-limit", type=int, default=1200)
     ap.add_argument("--out")
     ap.add_argument("--stub-proxy", action="store_true", help="прогон через локальную заглушку прокси")
+    ap.add_argument("--flag", action="append", default=[], metavar="ИМЯ=ЗНАЧЕНИЕ",
+                    help="значение флага по умолчанию только в архиве, например SOLUTION_CONCISE=1")
     args = ap.parse_args()
-    z = build(Path(args.out) if args.out else None)
+    flags = dict(f.split("=", 1) for f in args.flag)
+    z = build(Path(args.out) if args.out else None, flags)
     bad = check_archive(z)
     for b in bad:
         print(f"ОШИБКА в архиве: {b}")
