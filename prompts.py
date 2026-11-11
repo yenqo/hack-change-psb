@@ -122,8 +122,11 @@ def doc_block(d: Doc) -> str:
     return head + "]\n" + d.text
 
 
-def law_block(kb: KB, items: list[tuple[int, list[Chunk] | None]]) -> str:
-    """items: (doc idx, список фрагментов или None = вся статья)."""
+def law_block(kb: KB, items: list[tuple[int, list[Chunk] | None]], xref: dict | None = None,
+              absent: list | None = None) -> str:
+    """items: (doc idx, список фрагментов или None = вся статья). R6: xref — фрагмент → пункт, который на него
+    ссылается (пометка «[упомянут в …]»); absent — (акт, статья) из отсылок, которых нет в базе."""
+    xref = xref or {}
     parts = []
     for di, chs in items:
         d = kb.docs[di]
@@ -136,17 +139,24 @@ def law_block(kb: KB, items: list[tuple[int, list[Chunk] | None]]) -> str:
         if chs is None:
             body = d.body
         else:
-            body = "\n\n".join(f"<{c.label}>\n{c.text}" for c in sorted(chs, key=lambda c: c.order))
+            body = "\n\n".join(f"<{c.label}>" + (f" [упомянут в {xref[c.idx]}]" if c.idx in xref else "") +
+                                 f"\n{c.text}" for c in sorted(chs, key=lambda c: c.order))
         parts.append(head + "\n" + body)
+    if absent:
+        by_act: dict[str, list[str]] = {}
+        for act, art in absent:
+            by_act.setdefault(act, []).append(art)
+        parts.append("[Статьи, на которые ссылаются приведённые пункты, но которых в базе нет (их текста нет): " +
+                     "; ".join(f"{act} — ст. {', '.join(arts)}" for act, arts in by_act.items()) + "]")
     return "\n\n".join(parts)
 
 
 def build_user_message(kb: KB, company_docs: list[Doc], law_items, dnote: str, current: str,
-                       history: list[tuple[str, str]]) -> str:
+                       history: list[tuple[str, str]], xref: dict | None = None, absent: list | None = None) -> str:
     parts = [f"Текущая дата: {today().strftime('%d.%m.%Y')}."]
     parts.append("=== ДОКУМЕНТЫ КОМПАНИИ (полные тексты) ===\n" + "\n\n".join(doc_block(d) for d in company_docs))
     if law_items:
-        parts.append("=== ЗАКОНЫ (найденные статьи и пункты, действующая редакция) ===\n" + law_block(kb, law_items))
+        parts.append("=== ЗАКОНЫ (найденные статьи и пункты, действующая редакция) ===\n" + law_block(kb, law_items, xref, absent))
     if dnote:
         parts.append("=== СПРАВКА ПО ДАТАМ (вычислено автоматически по датам действия документов) ===\n" + dnote)
     if history:

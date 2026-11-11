@@ -152,7 +152,8 @@ def run_target(target: str, rows: list[dict], label: str, stage: str, chat_cache
                 if qid:
                     debug[qid] = {k: rec.get(k) for k in ("level", "unverified", "draft", "laws", "company",
                                                           "date_note", "prompt_chars", "law_hybrid", "law_order",
-                                                          "rerank_used", "law_chunks", "law_whole")}
+                                                          "rerank_used", "law_chunks", "law_whole", "law_reason",
+                                                          "law_xref", "law_absent")}
                     contexts[qid] = rec.get("user_msg")
         per_q = {r["id"]: {"calls": 0, "chat_sec": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
                            "cached_tokens": 0} for r in rows}
@@ -181,6 +182,11 @@ def run_target(target: str, rows: list[dict], label: str, stage: str, chat_cache
                                                      "MAX_TOKENS", "MAX_WORKERS")},
     }
     RUNS.mkdir(parents=True, exist_ok=True)
+    if proxy.stats["chat"] and proxy.stats["chat_err"] >= 0.5 * proxy.stats["chat"]:
+        # провайдер недоступен: ответы — запасные, такой прогон (и baseline стартового примера) сохранять нельзя
+        (RUNS / f"{label}.failed.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+        raise SystemExit(f"[{label}] ошибок чата {proxy.stats['chat_err']} из {proxy.stats['chat']}: провайдер "
+                         f"недоступен, прогон не сохранён (подробности — {label}.failed.json)")
     (RUNS / f"{label}.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
     if contexts:  # полные сообщения модели (для диагностики, tools/diagnose.py) — отдельно и сжато
         import gzip
@@ -339,6 +345,11 @@ def judge_run(label: str, stage: str, use_cache: bool = True, out_suffix: str = 
     out = {"label": label, "judge": version, "model": judge.model, "cache": use_cache, "errors": judge.errors,
            "error_notes": judge.notes,
            "tokens": judge.usage.total(), "q": {r["id"]: res for r, res in zip(rows, results)}}
+    if judge.errors:  # оценка с пропусками не годится для сравнения; успешные ответы судьи уже в кэше
+        (RUNS / f"{label}.judge{out_suffix}.failed.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
+                                                                     encoding="utf-8")
+        raise SystemExit(f"[{label}] судья: ошибок {judge.errors} — оценка не сохранена; повторите, когда провайдер "
+                         "ответит (готовые ответы судьи возьмутся из кэша)")
     (RUNS / f"{label}.judge{out_suffix}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
                                                           encoding="utf-8")
     print(f"[{label}] судья{'' if use_cache else ' без кэша'}: ошибок {judge.errors}", flush=True)
@@ -541,6 +552,7 @@ def main() -> int:
     p.add_argument("--stage", required=True)
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--judge-version", default=JUDGE_VERSION, choices=["j1", "j2"])
+    p.add_argument("--tag", default="", help="добавка к имени файла оценок, например _org для эталонов организаторов")
     p = sub.add_parser("report")
     p.add_argument("--labels", required=True)
     p.add_argument("--name", required=True)
@@ -557,7 +569,8 @@ def main() -> int:
         if args.judge:
             judge_run(args.label, args.stage)
     elif args.cmd == "judge":
-        suffix = ("_nocache" if args.no_cache else "") + ("" if args.judge_version == JUDGE_VERSION else f"_{args.judge_version}")
+        suffix = ("_nocache" if args.no_cache else "") + args.tag + \
+            ("" if args.judge_version == JUDGE_VERSION and not args.tag else f"_{args.judge_version}")
         judge_run(args.label, args.stage, use_cache=not args.no_cache, out_suffix=suffix, version=args.judge_version)
     elif args.cmd == "report":
         labels = args.labels.split(",")

@@ -778,3 +778,134 @@ def company_amendments(d: Doc) -> list[dict]:
         if m and _parse_date(m.group(1)):
             out.append({"kind": "after", "date": _parse_date(m.group(1)), "condition": sent[:220], "target": target})
     return out
+
+
+# --- R6: отсылки внутри законов («пункт N настоящей статьи», «статьей N настоящего Кодекса») ---
+_XR_ANCHOR = re.compile(r"настоящ(?:ей|его)\s+(статьи|пункта|подпункта|Кодекса|Федерального\s+закона|Закона)")
+_XR_NUM = r"\d+(?:\.\d+)*(?:-\d+)?"
+_XR_TOKEN = re.compile(rf"(подпункт|пункт|част|стать|абзац)\w*\s+({_XR_NUM}(?:\.?\s*(?:,|\bили\b|\bи\b|\bлибо\b|\s[-–—]\s|[–—])\s*{_XR_NUM})*)\.?",
+                       re.I)
+_XR_GAP = re.compile(r"^[\s,]*(?:(?:и|или|либо)\s+)?$")
+_XR_LEVEL = {"абзац": 0, "подпункт": 1, "пункт": 2, "част": 3, "стать": 4}
+_XR_CACHE: dict[int, dict[int, list[dict]]] = {}
+
+
+def _xr_nums(raw: str) -> list[str]:
+    out: list[str] = []
+    for part in re.split(r"\s*(?:,|\bили\b|\bи\b|\bлибо\b)\s*", raw.strip().rstrip(".")):
+        m = re.fullmatch(rf"({_XR_NUM})\s*(?:\s[-–—]\s|[–—])\s*({_XR_NUM})", part.strip())
+        if m and m.group(1).isdigit() and m.group(2).isdigit() and 0 < int(m.group(2)) - int(m.group(1)) <= 20:
+            out += [str(i) for i in range(int(m.group(1)), int(m.group(2)) + 1)]
+        elif m:
+            out += [m.group(1), m.group(2)]
+        elif re.fullmatch(_XR_NUM, part.strip()):
+            out.append(part.strip())
+    return out
+
+
+def _xr_point(label: str) -> str | None:
+    m = re.search(r", (?:п|ч)\. ([\d.\-]+)", label)
+    return m.group(1) if m else None
+
+
+def _xr_groups(segment: str) -> list[dict]:
+    """Цепочка «подпункт → пункт → часть → статья» непосредственно перед словом «настоящей/настоящего»."""
+    toks = list(_XR_TOKEN.finditer(segment))
+    chain: list[re.Match] = []
+    end = len(segment)
+    for t in reversed(toks):   # только токены, стоящие подряд вплотную к якорю
+        if not _XR_GAP.match(segment[t.end():end]):
+            break
+        chain.insert(0, t)
+        end = t.start()
+    groups: list[dict] = []
+    cur: dict = {}
+    for t in chain:
+        kind = t.group(1).lower()
+        lvl = _XR_LEVEL[kind]
+        if cur and lvl <= max(_XR_LEVEL[k] for k in cur):
+            groups.append(cur)
+            cur = {}
+        cur[kind] = _xr_nums(t.group(2))
+    if cur:
+        groups.append(cur)
+    return groups
+
+
+def cross_refs(kb: KB) -> dict[int, list[dict]]:
+    """Отсылки в пунктах законов (вычисляется один раз на базу): фрагмент → [{"text", "targets": [idx фрагментов],
+    "absent": [(акт, статья)]}]. Цель — фрагменты пункта/подпункта; пункт из нескольких больших фрагментов и ссылка
+    на статью целиком без пункта не раскрываются (слишком широко). Документы компании не разбираются (видны целиком)."""
+    key = id(kb)
+    if key in _XR_CACHE:
+        return _XR_CACHE[key]
+    act_of = {d.idx: d.label.split(", ст. ")[0] for d in kb.laws}
+    art_of = {d.idx: (d.label.split(", ст. ")[1] if ", ст. " in d.label else "") for d in kb.laws}
+    by_art = {(act_of[i], art_of[i]): i for i in act_of if art_of[i]}
+    by_point: dict[tuple[int, str | None], list[Chunk]] = {}
+    for c in kb.chunks:
+        if c.doc in act_of:
+            by_point.setdefault((c.doc, _xr_point(c.label)), []).append(c)
+
+    def targets(di: int, point: str | None, sub: str | None) -> list[int]:
+        chs = by_point.get((di, point), [])
+        if not chs:
+            return []
+        if sub:
+            for c in chs:
+                if re.search(rf"(?m)^{re.escape(sub)}\)", c.text):
+                    return [c.idx]
+            return []
+        return [c.idx for c in chs] if sum(len(c.text) for c in chs) <= 3000 else []
+
+    out: dict[int, list[dict]] = {}
+    for c in kb.chunks:
+        if c.doc not in act_of:
+            continue
+        act, own_art, own_point = act_of[c.doc], art_of[c.doc], _xr_point(c.label)
+        text = re.sub(r"\[Пометка редакции:[^\]]*\]", lambda m: " " * len(m.group(0)), c.text)
+        prev = 0
+        for a in _XR_ANCHOR.finditer(text):
+            seg_start = max(prev, a.start() - 220)
+            prev = a.end()
+            segment = text[seg_start:a.start()]
+            cut = max(segment.rfind(";"), segment.rfind("\n"))
+            segment = segment[cut + 1:]
+            what = a.group(1).lower()
+            refs_t: list[int] = []
+            absent: list[tuple[str, str]] = []
+            for g in _xr_groups(segment):
+                arts = g.get("стать")
+                if what == "статьи":
+                    arts = [own_art]
+                elif what == "пункта":
+                    if "подпункт" not in g or "пункт" in g:
+                        continue
+                    g = {**g, "пункт": [own_point] if own_point else []}
+                    arts = [own_art]
+                elif what == "подпункта":
+                    continue
+                if not arts:
+                    continue
+                if "част" in g:
+                    points, subs = g["част"], g.get("пункт") or g.get("подпункт") or [None]
+                else:
+                    points, subs = g.get("пункт") or [None], g.get("подпункт") or [None]
+                for art in arts:
+                    di = by_art.get((act, art))
+                    if di is None:
+                        if (act, art) not in absent:
+                            absent.append((act, art))
+                        continue
+                    if points == [None]:
+                        continue
+                    for p in points:
+                        for s in subs:
+                            for t in targets(di, p, s):
+                                if t != c.idx and t not in refs_t:
+                                    refs_t.append(t)
+            if refs_t or absent:
+                out.setdefault(c.idx, []).append({"text": (segment.strip() + " " + a.group(0))[-200:],
+                                                  "targets": refs_t, "absent": absent})
+    _XR_CACHE[key] = out
+    return out

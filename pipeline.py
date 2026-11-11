@@ -10,11 +10,11 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, DATE_CONDITIONS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import expand_query
 from dates import date_conditions, date_note, event_periods
-from kb import doc_clauses, doc_ids, doc_markup, related_docs
+from kb import cross_refs, doc_clauses, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
 from prompts import (REPAIR_REFS, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message,
@@ -141,6 +141,10 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
             budget -= len(c.text)
             extra += len(c.text)
             reasons[c.idx] = "general_point"
+    xref: dict[int, str] = {}
+    absent: list[tuple[str, str]] = []
+    if CROSS_REFS:  # R6: пункты, на которые ссылаются найденные, — на 1 шаг, не больше 3, в пределах бюджета
+        budget = _add_cross_refs(kb, order, items, reasons, budget, xref, absent)
     # порядок статей — по лучшему рангу
     rank_of = {}
     for r, ci in enumerate(order):
@@ -149,7 +153,44 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
     if diag is not None:
         diag.update(law_hybrid=list(ranked[:40]), law_order=list(order[:40]), rerank_used=order is not ranked,
                     law_reason=reasons)
+        if CROSS_REFS:
+            diag.update(law_xref=xref, law_absent=absent)
     return law_items, order
+
+
+XREF_MAX = 3          # фрагментов, добавленных по отсылкам
+XREF_ABSENT_MAX = 5  # статей «в базе отсутствует» в контексте
+XREF_SOURCES = 5     # отсылки разбираются только у лучших по рангу фрагментов в контексте
+
+
+def _add_cross_refs(kb: KB, order: list[int], items: dict, reasons: dict, budget: int, xref: dict, absent: list) -> int:
+    """Источники — найденные поиском фрагменты в контексте (у статей целиком — их пункты из выдачи поиска), по рангу.
+    xref: добавленный фрагмент → пункт-источник (для пометки «[упомянут в …]»); absent: (акт, статья), которых нет в базе."""
+    refs = cross_refs(kb)
+    in_ctx = {c.idx for chs in items.values() if chs for c in chs}
+    sources = [ci for ci in order[:LAW_TOP] if kb.chunks[ci].doc in items and
+               (items[kb.chunks[ci].doc] is None or ci in in_ctx)][:XREF_SOURCES]
+    added = 0
+    for ci in sources:
+        src = kb.chunks[ci]
+        for ref in refs.get(ci, []):
+            for a in ref["absent"] if ci == order[0] else []:   # «нет в базе» — только у лучшего фрагмента: меньше шума
+                if a not in absent and len(absent) < XREF_ABSENT_MAX:
+                    absent.append(a)
+            for t in ref["targets"]:
+                tc = kb.chunks[t]
+                if added >= XREF_MAX or t in in_ctx or len(tc.text) > budget:
+                    continue
+                if tc.doc in items and items[tc.doc] is None:   # статья и так целиком
+                    continue
+                items.setdefault(tc.doc, []).append(tc)
+                in_ctx.add(t)
+                budget -= len(tc.text)
+                reasons[t] = "cross_ref"
+                base = kb.docs[src.doc].label
+                xref[t] = src.label[len(base) + 2:] if tc.doc == src.doc and src.label.startswith(base + ", ") else src.label
+                added += 1
+    return budget
 
 
 def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False, minimal: bool = False,
@@ -286,7 +327,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     if DATE_CONDITIONS:  # R4: условия документов-изменений и редакции законов в контексте
         extra = date_conditions(qtext, kb, [(kb.docs[d], chs) for d, chs in law_items])
         dnote = "\n".join(x for x in (dnote, extra) if x)
-    user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history)
+    user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history,
+                                  xref=sel.get("law_xref"), absent=sel.get("law_absent"))
     system = SYSTEM_TEXT if level >= 3 else (SYSTEM_TEXT_SHORT if level == 2 else SYSTEM_TEXT_MINI)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
     if trace:
@@ -579,7 +621,8 @@ def build_context(kb: KB, index: Index, info: dict, prep: Prepared, qtext: str, 
                 out.append({**doc_entry(d, "whole", "short_article"), "search_hits": sh})
             else:
                 frs = [_frag(kb, kb.chunks[ci], rank.get(ci), reasons.get(ci, "search")) for ci in chs]
-                main = "search" if any(f["reason"] == "search" for f in frs) else "general_point"
+                main = next((r for r in ("search", "general_point", "cross_ref") if any(f["reason"] == r for f in frs)),
+                            "search")
                 out.append({**doc_entry(d, "fragments", main), "fragments": frs})
     removed = []
     for e in out:

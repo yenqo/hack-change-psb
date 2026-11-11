@@ -194,3 +194,76 @@ class TimeBudgetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class CrossRefsTest(unittest.TestCase):
+    """R6: отсылки внутри законов (SOLUTION_CROSS_REFS)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.core = harness.load_core()
+        with contextlib.redirect_stderr(io.StringIO()):
+            cls.kb = cls.core.build_kb()
+        cls.xr = cls.core.cross_refs(cls.kb)
+
+    def chunk(self, label: str, contains: str = ""):
+        return next(c for c in self.kb.chunks if c.label == label and contains in c.text)
+
+    def targets(self, label: str, contains: str = "") -> set[str]:
+        c = self.chunk(label, contains)
+        return {self.kb.chunks[t].label for r in self.xr.get(c.idx, []) for t in r["targets"]}
+
+    def absent(self, label: str, contains: str = "") -> set[str]:
+        c = self.chunk(label, contains)
+        return {art for r in self.xr.get(c.idx, []) for _, art in r["absent"]}
+
+    def test_numbers(self) -> None:
+        nums = self.core._xr_nums
+        self.assertEqual(nums("2 - 11"), [str(i) for i in range(2, 12)])
+        self.assertEqual(nums("1.4, 1.6, 1.17-2"), ["1.4", "1.6", "1.17-2"])
+        self.assertEqual(nums("2, 3 или 8"), ["2", "3", "8"])
+
+    def test_same_article_refs(self) -> None:
+        self.assertIn("КоАП РФ, ст. 13.11, ч. 2", self.targets("КоАП РФ, ст. 13.11, ч. 2.1"))
+        self.assertIn("НК РФ, ст. 224, п. 3.1", self.targets("НК РФ, ст. 224, п. 3", "3.1 настоящей статьи"))
+        self.assertIn("НК РФ, ст. 284, п. 3, пп. 1",
+                      self.targets("НК РФ, ст. 284, п. 3, пп. 3", "Для подтверждения права"))
+        self.assertIn("НК РФ, ст. 164, п. 2, пп. 1.1–1.2", self.targets("НК РФ, ст. 164, п. 10"))
+
+    def test_absent_articles(self) -> None:
+        label = next(c.label for c in self.kb.chunks if "152-ФЗ" in c.label and c.label.endswith("ч. 2"))
+        self.assertEqual(self.absent(label), {"6", "10", "11"})
+        self.assertIn("165", self.absent("НК РФ, ст. 164, п. 1, пп. 15–16"))
+
+    def test_company_docs_not_parsed(self) -> None:
+        self.assertTrue(all(self.kb.docs[self.kb.chunks[ci].doc].kind == "law" for ci in self.xr))
+
+    def test_expansion_marks_and_context(self) -> None:
+        src = self.chunk("КоАП РФ, ст. 13.11, ч. 2.1")
+        items = {src.doc: [src]}
+        reasons, xref, absent = {src.idx: "search"}, {}, []
+        left = self.core._add_cross_refs(self.kb, [src.idx], items, reasons, 12000, xref, absent)
+        added = [c for c in items[src.doc] if c is not src]
+        self.assertTrue(1 <= len(added) <= 3)
+        self.assertEqual(left, 12000 - sum(len(c.text) for c in added))
+        self.assertTrue(all(reasons[c.idx] == "cross_ref" and xref[c.idx] == "ч. 2.1" for c in added))
+        block = self.core.law_block(self.kb, list(items.items()), xref, [("НК РФ", "165")])
+        self.assertIn("<КоАП РФ, ст. 13.11, ч. 2> [упомянут в ч. 2.1]", block)
+        self.assertIn("НК РФ — ст. 165]", block)
+        # без пометок — блок как раньше
+        self.assertNotIn("упомянут", self.core.law_block(self.kb, list(items.items())))
+
+    def test_budget_and_limit(self) -> None:
+        src = self.chunk("НК РФ, ст. 224, п. 1")   # ссылается на пп. 1.1, 1.2, 2, 5, 6
+        items, xref = {src.doc: [src]}, {}
+        self.core._add_cross_refs(self.kb, [src.idx], items, {}, 12000, xref, [])
+        self.assertLessEqual(len(xref), 3)
+        items, xref = {src.doc: [src]}, {}
+        self.core._add_cross_refs(self.kb, [src.idx], items, {}, 50, xref, [])
+        self.assertEqual(xref, {})
+
+    def test_run_with_flag(self) -> None:
+        res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_CROSS_REFS": "1"})
+        self.assertEqual(len(res["answers"]), 18)
+        self.assertEqual(res["stats"]["level4"], 18)
