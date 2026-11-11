@@ -70,11 +70,15 @@ def demo_part(task: list[str], base: list[str] | None = None, org: bool = False)
     for lb in task:
         run, _ = load(lb)
         for qid, d in run["debug"].items():
-            x, a = d.get("law_xref") or {}, d.get("law_absent") or []
+            x, a, rw = d.get("law_xref") or {}, d.get("law_absent") or [], d.get("rewrite")
             if x or a:
                 fired = True
                 print(f"- {qid} ({lb}): добавлено {len(x)} — " + "; ".join(f"{k}←{v}" for k, v in x.items()) +
                       (f"; нет в базе: {[f'{act[:30]} ст. {art}' for act, art in a]}" if a else ""))
+            if rw:
+                fired = True
+                print(f"- {qid} ({lb}): переформулировано за {rw.get('sec')} c — «{rw.get('standalone')}»; "
+                      f"запросы: {rw.get('queries')}")
     if not fired:
         print("- нигде")
     print(f"\n**Регрессии** (оценка j2 ниже минимума «{bname}» хотя бы в одном прогоне задачи):\n")
@@ -163,7 +167,8 @@ def scenario_part(path: str, off: list[str], on: list[str]) -> None:
         tot["off"].append(k_off / len(off)); tot["on"].append(k_on / len(on))
         dbg = load(on[0])[0]["debug"].get(r["id"], {})
         what = (", ".join(f"{_label(k)} ← {v}" for k, v in (dbg.get("law_xref") or {}).items()) or "—") + \
-            (f"; нет в базе: ст. {', '.join(a for _, a in dbg['law_absent'])}" if dbg.get("law_absent") else "")
+            (f"; нет в базе: ст. {', '.join(a for _, a in dbg['law_absent'])}" if dbg.get("law_absent") else "") + \
+            (f"; «{dbg['rewrite'].get('standalone')}»" if dbg.get("rewrite") else "")
         print(f"| {r['id']} | {cells[0]:.2f} | {cells[1]:.2f} | {cells[2]:.2f} | {cells[3]:.2f} | "
               f"{k_off}/{len(off)} → {k_on}/{len(on)} | {what} |")
     for suf, name in (("", "j2"), ("_j1", "j1")):
