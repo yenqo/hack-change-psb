@@ -61,20 +61,24 @@ def run(scenario: str, mode: str) -> dict:
             demo = [(r["id"], r["question"]) for r in csv.DictReader(f)]
         if scenario == "slow":
             demo = demo[:1]
-        answers, stages = [], {}
+        answers, stages, sent = [], {}, {}
         for qid, q in demo:
             seen: list[str] = []
+            n_before = len(proxy.chat_calls)
             if mode == "dialogs":
                 res = bot.answer(platform_to_messages(q), on_stage=seen.append)
             else:
                 res = bot.answer_text(q, on_stage=seen.append)
             answers.append([qid, res.to_dict()])
             stages[qid] = seen
+            calls = proxy.chat_calls[n_before:]
+            if calls:  # сообщение пользователя первого вызова чата по этому вопросу
+                sent[qid] = proxy.texts[calls[0]["messages"][-1][1]]
         docs = bot.list_documents()
         full = {d["doc_id"]: bot.get_document(d["doc_id"]) for d in docs}
         extra = {"empty": bot.answer([]).to_dict(), "unknown_doc": bot.get_document("нет-такого"),
                  "to_platform": [bot.to_platform_text(platform_to_messages(q)) == q for _, q in demo]}
-        return {"health": health, "answers": answers, "stages": stages, "documents": docs, "full": full,
+        return {"health": health, "answers": answers, "stages": stages, "sent": sent, "documents": docs, "full": full,
                 "extra": extra, "health_after": bot.health()}
     finally:
         os.chdir(harness.ROOT)

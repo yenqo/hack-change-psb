@@ -15,7 +15,7 @@ import contract_runner
 import harness
 
 STATUSES = {"answer", "partial", "no_info", "premise_error", "clarify", "out_of_scope", "error"}
-RESULT_KEYS = {"contract_version", "status", "text", "citations", "warnings", "timing_ms", "debug"}
+RESULT_KEYS = {"contract_version", "status", "text", "citations", "warnings", "context", "timing_ms", "debug"}
 CITATION_KEYS = {"doc_id", "doc_title", "doc_kind", "clause", "quote", "start", "end", "found",
                  "applies_to_event_date"}
 DOC_KEYS = {"doc_id", "title", "label", "kind", "type", "status", "valid_from", "valid_to", "export_date", "related",
@@ -53,7 +53,7 @@ class ContractTest(unittest.TestCase):
     def test_result_schema(self) -> None:
         for qid, r in self.res["answers"]:
             self.assertEqual(set(r), RESULT_KEYS, qid)
-            self.assertEqual(r["contract_version"], "1.0")
+            self.assertEqual(r["contract_version"], "1.1")
             self.assertIn(r["status"], STATUSES)
             self.assertTrue(r["text"].strip())
             self.assertIn("total", r["timing_ms"])
@@ -64,6 +64,40 @@ class ContractTest(unittest.TestCase):
             for w in r["warnings"]:
                 self.assertIn("code", w)
                 self.assertIn("message", w)
+
+    def test_context(self) -> None:
+        """context (1.1): документы и фрагменты контекста модели со смещениями; без текстов."""
+        import re
+        full = self.res["full"]
+        n_frag = 0
+        for qid, r in self.res["answers"]:
+            ctx = r["context"]
+            self.assertEqual(set(ctx), {"documents", "date_note", "removed_from_context"}, qid)
+            self.assertTrue(ctx["documents"], qid)
+            sent = self.res["sent"][qid]
+            cited = {c["doc_id"] for c in r["citations"]}
+            for d in ctx["documents"]:
+                self.assertIn(d["included"], ("whole", "fragments"))
+                self.assertIn(d["reason"], ("company_full", "search", "related", "date_applicable", "short_article",
+                                            "general_point", "cross_ref"))
+                self.assertEqual(d["cited"], d["doc_id"] in cited)
+                text = full[d["doc_id"]]["text"]
+                items = d.get("fragments") or d.get("search_hits") or []
+                for it in items:
+                    self.assertTrue(0 <= it["start"] < it["end"] <= len(text), f"{qid} {d['doc_id']} {it}")
+                for f in d.get("fragments", []):
+                    n_frag += 1
+                    span = text[f["start"]:f["end"]]
+                    # каждая строка исходного куска есть в сообщении, отправленном модели
+                    for line in [x.strip() for x in span.split("\n") if x.strip()]:
+                        self.assertIn(line, sent, f"{qid}: строка фрагмента {d['doc_id']} {f['clause']} не в сообщении")
+                if d["included"] == "whole" and d["doc_kind"] == "company":
+                    self.assertIn(text.split("\n", 1)[0].strip(), sent)
+            for rm in ctx["removed_from_context"]:
+                self.assertTrue(full[rm["doc_id"]]["text"][rm["start"]:rm["end"]].startswith("[Фрагмент удалён"))
+            blob = json.dumps(ctx, ensure_ascii=False)
+            self.assertNotRegex(blob, r'"text"\s*:', "в context не передаются тексты")
+        self.assertGreater(n_frag, 20)
 
     def test_stages(self) -> None:
         for qid, seen in self.res["stages"].items():

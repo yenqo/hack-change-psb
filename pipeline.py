@@ -14,7 +14,7 @@ from config import (CHECK_REFS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LI
     remaining)
 from textproc import expand_query
 from dates import date_note, event_periods
-from kb import doc_clauses, doc_ids, related_docs
+from kb import doc_clauses, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
 from prompts import (REPAIR_REFS, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message,
@@ -105,6 +105,7 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
         if len(kb.docs[d].body) <= min(SMALL_LAW_CHARS, budget) and d not in whole:
             whole.append(d)
     items: dict[int, list[Chunk] | None] = {}
+    reasons: dict[int, str] = {}   # фрагмент → почему попал в контекст (для поля context веб-части)
     for d in whole:
         size = len(kb.docs[d].body)
         if size <= budget:
@@ -120,6 +121,7 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
         if c not in items[c.doc]:  # type: ignore[operator]
             items[c.doc].append(c)  # type: ignore[union-attr]
             budget -= len(c.text)
+            reasons[c.idx] = "search"
     # Для больших статей из топ-3 добавляем короткие пункты верхнего уровня: там обычно общие правила
     # (например, общая ставка налога), которые лексически плохо находятся по вопросу.
     seen_docs = []
@@ -138,19 +140,24 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
             items[d].append(c)  # type: ignore[union-attr]
             budget -= len(c.text)
             extra += len(c.text)
+            reasons[c.idx] = "general_point"
     # порядок статей — по лучшему рангу
     rank_of = {}
     for r, ci in enumerate(order):
         rank_of.setdefault(kb.chunks[ci].doc, r)
     law_items = sorted(items.items(), key=lambda x: rank_of.get(x[0], 999))
     if diag is not None:
-        diag.update(law_hybrid=list(ranked[:40]), law_order=list(order[:40]), rerank_used=order is not ranked)
+        diag.update(law_hybrid=list(ranked[:40]), law_order=list(order[:40]), rerank_used=order is not ranked,
+                    law_reason=reasons)
     return law_items, order
 
 
-def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False, minimal: bool = False) -> list[Doc]:
+def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False, minimal: bool = False,
+                    diag: dict | None = None) -> list[Doc]:
     docs = kb.company
     if not compact and not minimal and sum(len(d.text) for d in docs) <= COMPANY_FULL_LIMIT:
+        if diag is not None:
+            diag["company_reason"] = {d.idx: "company_full" for d in docs}
         return docs
     limit = 5000 if minimal else (10000 if compact else COMPANY_FULL_LIMIT)
     max_docs = 2 if minimal else (4 if compact else 8)
@@ -168,6 +175,8 @@ def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False,
                 continue
             chosen.append(g)
             size += len(g.text)
+            if diag is not None:
+                diag.setdefault("company_reason", {})[g.idx] = "search" if g is d else "related"
         if len(chosen) >= max_docs:
             break
     return [d for d in docs if d in chosen]  # исходный порядок документов
@@ -272,7 +281,7 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     law_budget = {4: LAW_BUDGET_CHARS, 3: 8000, 2: 4000}.get(level, 2000)
     sel: dict = {}
     law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget, diag=sel)
-    comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1)
+    comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1, diag=sel)
     dnote = date_note(qtext, kb)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history)
     system = SYSTEM_TEXT if level >= 3 else (SYSTEM_TEXT_SHORT if level == 2 else SYSTEM_TEXT_MINI)
@@ -361,7 +370,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
               "company": [d.label for d in comp], "date_note": dnote, "draft": draft, "unverified": bad,
               "final": ans, "prompt_chars": len(user_msg), **sel,
               "law_chunks": [c.idx for _, chs in law_items if chs for c in chs],
-              "law_whole": [d for d, chs in law_items if chs is None], "user_msg": user_msg}
+              "law_whole": [d for d, chs in law_items if chs is None], "user_msg": user_msg,
+              "law_items_idx": [[d, None if chs is None else [c.idx for c in chs]] for d, chs in law_items]}
     if CHECK_REFS:
         record["unverified_refs"] = refs
     debug_dump(record)
@@ -387,11 +397,12 @@ class Result:
     timing_ms: dict = field(default_factory=dict)
     debug: dict = field(default_factory=dict)
     contract_version: str = ""
+    context: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {"contract_version": self.contract_version, "status": self.status, "text": self.text,
-                "citations": self.citations, "warnings": self.warnings, "timing_ms": self.timing_ms,
-                "debug": self.debug}
+                "citations": self.citations, "warnings": self.warnings, "context": self.context,
+                "timing_ms": self.timing_ms, "debug": self.debug}
 
 
 def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> list[dict]:
@@ -514,6 +525,67 @@ def build_warnings(kb: KB, qtext: str, info: dict, citations: list[dict], ids: d
     return out
 
 
+def _clause_of(kb: KB, c: Chunk) -> str | None:
+    lab, base = c.label, kb.docs[c.doc].label
+    return lab[len(base) + 2:] if lab.startswith(base + ", ") else None
+
+
+def _frag(kb: KB, c: Chunk, rank: int | None, reason: str) -> dict:
+    return {"clause": _clause_of(kb, c), "start": c.start, "end": c.end, "rank": rank, "reason": reason,
+            "edition_note": "[Пометка редакции:" in c.text}
+
+
+def build_context(kb: KB, index: Index, info: dict, prep: Prepared, qtext: str, ids: dict[int, str],
+                  citations: list[dict]) -> dict:
+    """Что ушло в контекст модели — из тех же объектов, из которых строилось сообщение (info из answer_one).
+    Только идентификаторы и смещения в тексте get_document; тексты не передаются."""
+    periods = event_periods(qtext)
+    cited = {c["doc_id"] for c in citations}
+    order = info.get("law_order") or []
+    rank = {ci: i + 1 for i, ci in enumerate(order)}
+    reasons = {int(k): v for k, v in (info.get("law_reason") or {}).items()}
+    out: list[dict] = []
+
+    def doc_entry(d: Doc, included: str, reason: str) -> dict:
+        return {"doc_id": ids[d.idx], "doc_title": d.title, "doc_kind": d.kind, "included": included, "reason": reason,
+                "applies_to_event_date": _applies(d, periods), "cited": ids[d.idx] in cited}
+
+    if info.get("level") == 0:   # короткий запрос: только найденные фрагменты
+        by_doc: dict[int, list] = {}
+        for i, ci in enumerate(info.get("chunks") or []):
+            by_doc.setdefault(kb.chunks[ci].doc, []).append(_frag(kb, kb.chunks[ci], i + 1, "search"))
+        for di, frs in by_doc.items():
+            out.append({**doc_entry(kb.docs[di], "fragments", "search"), "fragments": frs})
+    else:
+        # документы компании: целиком; совпадения поиска — для подсветки
+        q = prep.current + " " + " ".join(t for _, t in prep.history)
+        hits: dict[int, list] = {}
+        for r, ci in enumerate(index.hybrid(q, prep.qvec, {"company"})[:10], 1):
+            c = kb.chunks[ci]
+            hits.setdefault(c.doc, []).append({"clause": _clause_of(kb, c), "start": c.start, "end": c.end, "rank": r})
+        creason = {int(k): v for k, v in (info.get("company_reason") or {}).items()}
+        for di in info.get("company_doc_idx") or []:
+            out.append({**doc_entry(kb.docs[di], "whole", creason.get(di, "company_full")),
+                        "search_hits": hits.get(di, [])})
+        # законы: статьи целиком или найденные фрагменты
+        for di, chs in info.get("law_items_idx") or []:
+            d = kb.docs[di]
+            if chs is None:
+                sh = [{"clause": _clause_of(kb, kb.chunks[ci]), "start": kb.chunks[ci].start,
+                       "end": kb.chunks[ci].end, "rank": rank[ci]} for ci in order if kb.chunks[ci].doc == di]
+                out.append({**doc_entry(d, "whole", "short_article"), "search_hits": sh})
+            else:
+                frs = [_frag(kb, kb.chunks[ci], rank.get(ci), reasons.get(ci, "search")) for ci in chs]
+                main = "search" if any(f["reason"] == "search" for f in frs) else "general_point"
+                out.append({**doc_entry(d, "fragments", main), "fragments": frs})
+    removed = []
+    for e in out:
+        d = kb.docs[next(k for k, v in ids.items() if v == e["doc_id"])]
+        for r in doc_markup(d)["removed_instructions"]:
+            removed.append({"doc_id": e["doc_id"], "start": r["start"], "end": r["end"], "note": r["note"]})
+    return {"documents": out, "date_note": info.get("date_note") or "", "removed_from_context": removed}
+
+
 def answer(kb: KB, index: Index, qtext: str, level: int = 4, trace=None, debug: bool = False,
            ids: dict[int, str] | None = None) -> Result:
     """Один вопрос (текст в формате платформы, с историей диалога) → Result. Тот же конвейер answer_one, что и в
@@ -550,9 +622,14 @@ def answer(kb: KB, index: Index, qtext: str, level: int = 4, trace=None, debug: 
                  {"code": "fallback", "message": type(exc).__name__}]
     stage("done")
     citations = extract_citations(kb, text, qtext, ids) if status != "error" else []
+    context: dict = {}
     if status is None:
         status = classify_status(text, citations)
         warns = build_warnings(kb, qtext, info, citations, ids)
+        try:
+            context = build_context(kb, index, info, prep, qtext, ids, citations)
+        except Exception:  # noqa: BLE001 — описание контекста не должно ломать ответ
+            context = {}
     order = ["search", "generate", "verify", "done"]
     seen = [n for n in order if n in marks]
     timing = {}
@@ -562,4 +639,5 @@ def answer(kb: KB, index: Index, qtext: str, level: int = 4, trace=None, debug: 
     dbg = {}
     if debug or DEBUG:
         dbg = {k: info.get(k) for k in ("level", "laws", "company", "date_note", "draft", "unverified", "prompt_chars")}
-    return Result(text=text, status=status, citations=citations, warnings=warns, timing_ms=timing, debug=dbg)
+    return Result(text=text, status=status, citations=citations, warnings=warns, timing_ms=timing, debug=dbg,
+                  context=context)

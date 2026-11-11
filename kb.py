@@ -44,6 +44,8 @@ class Chunk:
     text: str
     order: int
     search: str = ""
+    start: int = -1            # смещения фрагмента в тексте документа (doc.text, его отдаёт get_document)
+    end: int = -1
 
 
 def decode_bytes(raw: bytes) -> str:
@@ -545,6 +547,8 @@ def build_kb() -> KB:
         chunks.extend(new)
     log(f"Документов компании: {sum(d.kind == 'company' for d in docs)}, законов: "
         f"{sum(d.kind == 'law' for d in docs)}, фрагментов: {len(chunks)}")
+    for d in docs:
+        locate_chunks(d, [c for c in chunks if c.doc == d.idx])
     return KB(docs, chunks)
 
 
@@ -682,3 +686,46 @@ def kb_hash(kb: KB) -> str:
     for d in sorted(kb.docs, key=lambda d: d.path):
         h.update(d.path.encode("utf-8") + b"\0" + hashlib.sha256(d.text.encode("utf-8")).digest())
     return h.hexdigest()
+
+
+_NOTE_LINE = re.compile(r"^\[Пометка редакции: (.*)\]$")
+
+
+def _source_lines(chunk_text: str) -> list[str]:
+    """Строки фрагмента в том виде, в каком они есть в тексте документа: без служебных «(продолжение …)», пометки
+    редакции — без обёртки «[Пометка редакции: …]»."""
+    out = []
+    for ln in chunk_text.split("\n"):
+        ln = ln.strip()
+        if not ln or ln.startswith("(продолжение "):
+            continue
+        m = _NOTE_LINE.match(ln)
+        out.append(m.group(1) if m else ln)
+    return out
+
+
+def locate_chunks(d: Doc, chunks: list[Chunk]) -> None:
+    """Смещения фрагментов в d.text. Ищем строки фрагмента по порядку от конца предыдущего фрагмента; строка-заголовок
+    раздела, повторённая в начале фрагмента документа компании, в начало не засчитывается."""
+    text = d.text
+    cursor = 0
+    for c in sorted(chunks, key=lambda c: c.order):
+        lines = _source_lines(c.text)
+        if not lines:  # фрагмент только из «(продолжение п. N: «начало пункта…»)» — указываем на начало пункта
+            m = re.search(r"«(.+?)…?»\)", c.text)
+            lines = [m.group(1).rstrip("…").strip()] if m else []
+        found = []
+        for ln in lines:
+            p = text.find(ln, cursor)
+            if p >= 0:
+                found.append((p, p + len(ln)))
+        if not found:
+            for ln in lines:
+                p = text.find(ln)
+                if p >= 0:
+                    found.append((p, p + len(ln)))
+        if not found:
+            continue
+        c.start = min(a for a, _ in found)
+        c.end = max(b for _, b in found)
+        cursor = c.start

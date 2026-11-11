@@ -8,7 +8,7 @@
     ]
   },
   "response": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "status": "clarify",
     "text": "По договору с ООО «Альфа-Трейд» оплатить товар нужно в течение 30 календарных дней с даты подписания УПД по соответствующей партии (договор поставки № П-17/2024, п. 4.2). По договору с ООО «Альфа-Трейдинг» срок оплаты — 45 календарных дней с даты поставки (договор поставки № ПТ-05/2023, п. 4.1). Уточните, о каком контрагенте речь.",
     "citations": [
@@ -36,11 +36,294 @@
       }
     ],
     "warnings": [],
+    "context": {
+      "documents": [
+        {
+          "doc_id": "dogovor-arendy-a-08-2024-severnyy-sklad",
+          "doc_title": "ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "dogovor-postavki-p-17-2024-alfa-treyd",
+          "doc_title": "ДОГОВОР ПОСТАВКИ № П-17/2024",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": true,
+          "search_hits": [
+            {
+              "clause": "п. 7.1–7.4",
+              "start": 2341,
+              "end": 3061,
+              "rank": 2
+            },
+            {
+              "clause": "п. 9.1–9.2",
+              "start": 3529,
+              "end": 3783,
+              "rank": 3
+            },
+            {
+              "clause": "п. 4.1–4.3",
+              "start": 1432,
+              "end": 1882,
+              "rank": 4
+            },
+            {
+              "clause": "п. 5.1–5.2",
+              "start": 1883,
+              "end": 2072,
+              "rank": 5
+            },
+            {
+              "clause": "п. 8.1–8.2",
+              "start": 3250,
+              "end": 3528,
+              "rank": 7
+            },
+            {
+              "clause": "п. 1.1–1.2",
+              "start": 465,
+              "end": 810,
+              "rank": 9
+            }
+          ]
+        },
+        {
+          "doc_id": "dogovor-postavki-pt-05-2023-alfa-treyding",
+          "doc_title": "ДОГОВОР ПОСТАВКИ № ПТ-05/2023",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": true,
+          "search_hits": [
+            {
+              "clause": "п. 8.1",
+              "start": 2263,
+              "end": 2516,
+              "rank": 1
+            },
+            {
+              "clause": "п. 6.1",
+              "start": 2026,
+              "end": 2135,
+              "rank": 6
+            },
+            {
+              "clause": "п. 4.1–4.2",
+              "start": 1368,
+              "end": 1581,
+              "rank": 8
+            },
+            {
+              "clause": "п. 5.1–5.3",
+              "start": 1582,
+              "end": 2025,
+              "rank": 10
+            }
+          ]
+        },
+        {
+          "doc_id": "dop-soglashenie-1-k-dogovoru-p-17-2024",
+          "doc_title": "ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ № 1",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "pismo-komplaens-sluzhby-k-12-ot-15-04-2025",
+          "doc_title": "Исх. № К-12 от 15.04.2025",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "reglament-soglasovaniya-dogovorov-red-2023-utratil-silu",
+          "doc_title": "РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН»",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "reglament-soglasovaniya-dogovorov-red-2025",
+          "doc_title": "РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН»",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "sluzhebnaya-zapiska-ob-arkhive-dogovorov",
+          "doc_title": "СЛУЖЕБНАЯ ЗАПИСКА № ЮО-7 от 12.05.2025",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "tk-st152-deystvuyushchaya",
+          "doc_title": "ТК РФ, ст. 152 «Оплата сверхурочной работы»",
+          "doc_kind": "law",
+          "included": "whole",
+          "reason": "short_article",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 342,
+              "end": 880,
+              "rank": 1
+            },
+            {
+              "clause": null,
+              "start": 882,
+              "end": 2199,
+              "rank": 2
+            },
+            {
+              "clause": null,
+              "start": 2201,
+              "end": 2618,
+              "rank": 6
+            }
+          ]
+        },
+        {
+          "doc_id": "mrot-st1-deystvuyushchaya",
+          "doc_title": "Федеральный закон от 19.06.2000 № 82-ФЗ «О минимальном размере оплаты труда», ст. 1",
+          "doc_kind": "law",
+          "included": "whole",
+          "reason": "short_article",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 315,
+              "end": 1731,
+              "rank": 3
+            },
+            {
+              "clause": null,
+              "start": 1733,
+              "end": 2057,
+              "rank": 11
+            }
+          ]
+        },
+        {
+          "doc_id": "nk-st164-deystvuyushchaya",
+          "doc_title": "НК РФ, ст. 164 «Налоговые ставки» — налог на добавленную стоимость (НДС)",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "search",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": "п. 1, пп. 20",
+              "start": 49742,
+              "end": 50169,
+              "rank": 4,
+              "reason": "search",
+              "edition_note": false
+            }
+          ]
+        },
+        {
+          "doc_id": "tk-st70-deystvuyushchaya",
+          "doc_title": "ТК РФ, ст. 70 «Испытание при приеме на работу»",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "search",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": null,
+              "start": 1917,
+              "end": 2751,
+              "rank": 5,
+              "reason": "search",
+              "edition_note": false
+            }
+          ]
+        },
+        {
+          "doc_id": "nk-st145-deystvuyushchaya",
+          "doc_title": "НК РФ, ст. 145 «Освобождение от исполнения обязанностей налогоплательщика» — налог на добавленную стоимость (НДС)",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "search",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": "п. 4",
+              "start": 9932,
+              "end": 11469,
+              "rank": 7,
+              "reason": "search",
+              "edition_note": true
+            }
+          ]
+        },
+        {
+          "doc_id": "nk-st284-deystvuyushchaya",
+          "doc_title": "НК РФ, ст. 284 «Налоговые ставки» — налог на прибыль организаций",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "search",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": "п. 1.7",
+              "start": 12675,
+              "end": 13399,
+              "rank": 8,
+              "reason": "search",
+              "edition_note": false
+            }
+          ]
+        }
+      ],
+      "date_note": "",
+      "removed_from_context": [
+        {
+          "doc_id": "sluzhebnaya-zapiska-ob-arkhive-dogovorov",
+          "start": 615,
+          "end": 696,
+          "note": "Встроенная инструкция для ИИ удалена: не является положением документа"
+        }
+      ]
+    },
     "timing_ms": {
-      "search": 10,
-      "generate": 18781,
-      "verify": 20,
-      "total": 18819
+      "search": 8,
+      "generate": 7,
+      "verify": 15,
+      "total": 35
     },
     "debug": {}
   }

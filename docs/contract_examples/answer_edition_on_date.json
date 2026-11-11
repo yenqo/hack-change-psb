@@ -8,7 +8,7 @@
     ]
   },
   "response": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "status": "answer",
     "text": "Да. По Регламенту согласования договоров ООО «Меридиан» в редакции от 10.01.2023 договоры на сумму свыше 10 000 000 рублей подлежали одобрению генеральным директором до подписания (п. 2.4). Договор на 12 млн рублей превышает этот порог.",
     "citations": [
@@ -30,11 +30,241 @@
         "message": "Период из вопроса «августе 2024»: применимы «Регламент согласования договоров ред 2023 (утратил силу)»; не действовали в этот период: «Регламент согласования договоров ред 2025»."
       }
     ],
+    "context": {
+      "documents": [
+        {
+          "doc_id": "dogovor-arendy-a-08-2024-severnyy-sklad",
+          "doc_title": "ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 0,
+              "end": 503,
+              "rank": 6
+            },
+            {
+              "clause": null,
+              "start": 2571,
+              "end": 2837,
+              "rank": 9
+            }
+          ]
+        },
+        {
+          "doc_id": "dogovor-postavki-p-17-2024-alfa-treyd",
+          "doc_title": "ДОГОВОР ПОСТАВКИ № П-17/2024",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 0,
+              "end": 464,
+              "rank": 2
+            },
+            {
+              "clause": null,
+              "start": 3784,
+              "end": 4041,
+              "rank": 5
+            }
+          ]
+        },
+        {
+          "doc_id": "dogovor-postavki-pt-05-2023-alfa-treyding",
+          "doc_title": "ДОГОВОР ПОСТАВКИ № ПТ-05/2023",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 0,
+              "end": 463,
+              "rank": 8
+            },
+            {
+              "clause": null,
+              "start": 2517,
+              "end": 2769,
+              "rank": 10
+            }
+          ]
+        },
+        {
+          "doc_id": "dop-soglashenie-1-k-dogovoru-p-17-2024",
+          "doc_title": "ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ № 1",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 0,
+              "end": 900,
+              "rank": 4
+            },
+            {
+              "clause": null,
+              "start": 901,
+              "end": 965,
+              "rank": 7
+            }
+          ]
+        },
+        {
+          "doc_id": "pismo-komplaens-sluzhby-k-12-ot-15-04-2025",
+          "doc_title": "Исх. № К-12 от 15.04.2025",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "reglament-soglasovaniya-dogovorov-red-2023-utratil-silu",
+          "doc_title": "РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН»",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": true,
+          "cited": true,
+          "search_hits": [
+            {
+              "clause": "п. 2.1–2.4",
+              "start": 565,
+              "end": 1013,
+              "rank": 1
+            }
+          ]
+        },
+        {
+          "doc_id": "reglament-soglasovaniya-dogovorov-red-2025",
+          "doc_title": "РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН»",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": false,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": "п. 2.1–2.5",
+              "start": 600,
+              "end": 1279,
+              "rank": 3
+            }
+          ]
+        },
+        {
+          "doc_id": "sluzhebnaya-zapiska-ob-arkhive-dogovorov",
+          "doc_title": "СЛУЖЕБНАЯ ЗАПИСКА № ЮО-7 от 12.05.2025",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "koap-st13-11-deystvuyushchaya",
+          "doc_title": "КоАП РФ, ст. 13.11 «Нарушение законодательства Российской Федерации в области персональных данных»",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "search",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": "ч. 12",
+              "start": 10642,
+              "end": 11332,
+              "rank": 1,
+              "reason": "search",
+              "edition_note": true
+            },
+            {
+              "clause": "ч. 1.1",
+              "start": 1350,
+              "end": 1774,
+              "rank": null,
+              "reason": "general_point",
+              "edition_note": true
+            }
+          ]
+        },
+        {
+          "doc_id": "nk-st164-deystvuyushchaya",
+          "doc_title": "НК РФ, ст. 164 «Налоговые ставки» — налог на добавленную стоимость (НДС)",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "search",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": "п. 1, пп. 22",
+              "start": 52683,
+              "end": 54162,
+              "rank": 2,
+              "reason": "search",
+              "edition_note": false
+            },
+            {
+              "clause": "п. 6",
+              "start": 67435,
+              "end": 67469,
+              "rank": null,
+              "reason": "general_point",
+              "edition_note": false
+            }
+          ]
+        },
+        {
+          "doc_id": "tk-st152-deystvuyushchaya",
+          "doc_title": "ТК РФ, ст. 152 «Оплата сверхурочной работы»",
+          "doc_kind": "law",
+          "included": "whole",
+          "reason": "short_article",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 342,
+              "end": 880,
+              "rank": 4
+            }
+          ]
+        }
+      ],
+      "date_note": "Период из вопроса «августе 2024»: применимы «Регламент согласования договоров ред 2023 (утратил силу)»; не действовали в этот период: «Регламент согласования договоров ред 2025».",
+      "removed_from_context": [
+        {
+          "doc_id": "sluzhebnaya-zapiska-ob-arkhive-dogovorov",
+          "start": 615,
+          "end": 696,
+          "note": "Встроенная инструкция для ИИ удалена: не является положением документа"
+        }
+      ]
+    },
     "timing_ms": {
-      "search": 30,
-      "generate": 4171,
-      "verify": 25,
-      "total": 4245
+      "search": 8,
+      "generate": 5,
+      "verify": 14,
+      "total": 32
     },
     "debug": {}
   }

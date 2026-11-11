@@ -16,7 +16,7 @@
     ]
   },
   "response": {
-    "contract_version": "1.0",
+    "contract_version": "1.1",
     "status": "partial",
     "text": "По договору поставки № ПТ-05/2023 с ООО «Альфа-Трейдинг» гарантийный срок устанавливает производитель и указывает в гарантийном талоне; конкретная продолжительность в договоре не установлена (п. 6.1). Для определения срока нужен гарантийный талон на приобретённый товар.",
     "citations": [
@@ -33,11 +33,247 @@
       }
     ],
     "warnings": [],
+    "context": {
+      "documents": [
+        {
+          "doc_id": "dogovor-arendy-a-08-2024-severnyy-sklad",
+          "doc_title": "ДОГОВОР АРЕНДЫ НЕЖИЛОГО ПОМЕЩЕНИЯ № А-08/2024",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "dogovor-postavki-p-17-2024-alfa-treyd",
+          "doc_title": "ДОГОВОР ПОСТАВКИ № П-17/2024",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": "п. 5.1–5.2",
+              "start": 1883,
+              "end": 2072,
+              "rank": 2
+            },
+            {
+              "clause": null,
+              "start": 0,
+              "end": 464,
+              "rank": 5
+            },
+            {
+              "clause": null,
+              "start": 3784,
+              "end": 4041,
+              "rank": 7
+            },
+            {
+              "clause": "п. 7.5",
+              "start": 2341,
+              "end": 3249,
+              "rank": 10
+            }
+          ]
+        },
+        {
+          "doc_id": "dogovor-postavki-pt-05-2023-alfa-treyding",
+          "doc_title": "ДОГОВОР ПОСТАВКИ № ПТ-05/2023",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": true,
+          "search_hits": [
+            {
+              "clause": "п. 6.1",
+              "start": 2026,
+              "end": 2135,
+              "rank": 1
+            },
+            {
+              "clause": null,
+              "start": 2517,
+              "end": 2769,
+              "rank": 3
+            },
+            {
+              "clause": null,
+              "start": 0,
+              "end": 463,
+              "rank": 4
+            },
+            {
+              "clause": "п. 1.1–1.2",
+              "start": 464,
+              "end": 803,
+              "rank": 6
+            },
+            {
+              "clause": "п. 4.1–4.2",
+              "start": 1368,
+              "end": 1581,
+              "rank": 8
+            },
+            {
+              "clause": "п. 3.1–3.3",
+              "start": 1040,
+              "end": 1367,
+              "rank": 9
+            }
+          ]
+        },
+        {
+          "doc_id": "dop-soglashenie-1-k-dogovoru-p-17-2024",
+          "doc_title": "ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ № 1",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "pismo-komplaens-sluzhby-k-12-ot-15-04-2025",
+          "doc_title": "Исх. № К-12 от 15.04.2025",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "reglament-soglasovaniya-dogovorov-red-2023-utratil-silu",
+          "doc_title": "РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН»",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "reglament-soglasovaniya-dogovorov-red-2025",
+          "doc_title": "РЕГЛАМЕНТ СОГЛАСОВАНИЯ ДОГОВОРОВ ООО «МЕРИДИАН»",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "sluzhebnaya-zapiska-ob-arkhive-dogovorov",
+          "doc_title": "СЛУЖЕБНАЯ ЗАПИСКА № ЮО-7 от 12.05.2025",
+          "doc_kind": "company",
+          "included": "whole",
+          "reason": "company_full",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": []
+        },
+        {
+          "doc_id": "tk-st70-deystvuyushchaya",
+          "doc_title": "ТК РФ, ст. 70 «Испытание при приеме на работу»",
+          "doc_kind": "law",
+          "included": "whole",
+          "reason": "short_article",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 1917,
+              "end": 2751,
+              "rank": 1
+            },
+            {
+              "clause": null,
+              "start": 365,
+              "end": 1915,
+              "rank": 18
+            }
+          ]
+        },
+        {
+          "doc_id": "nk-st284-deystvuyushchaya",
+          "doc_title": "НК РФ, ст. 284 «Налоговые ставки» — налог на прибыль организаций",
+          "doc_kind": "law",
+          "included": "fragments",
+          "reason": "general_point",
+          "applies_to_event_date": null,
+          "cited": false,
+          "fragments": [
+            {
+              "clause": "п. 1.2-1",
+              "start": 6189,
+              "end": 6277,
+              "rank": null,
+              "reason": "general_point",
+              "edition_note": false
+            },
+            {
+              "clause": "п. 1.10",
+              "start": 27344,
+              "end": 27428,
+              "rank": null,
+              "reason": "general_point",
+              "edition_note": false
+            },
+            {
+              "clause": "п. 1.11",
+              "start": 27430,
+              "end": 27518,
+              "rank": null,
+              "reason": "general_point",
+              "edition_note": false
+            }
+          ]
+        },
+        {
+          "doc_id": "tk-st152-deystvuyushchaya",
+          "doc_title": "ТК РФ, ст. 152 «Оплата сверхурочной работы»",
+          "doc_kind": "law",
+          "included": "whole",
+          "reason": "short_article",
+          "applies_to_event_date": null,
+          "cited": false,
+          "search_hits": [
+            {
+              "clause": null,
+              "start": 882,
+              "end": 2199,
+              "rank": 4
+            },
+            {
+              "clause": null,
+              "start": 342,
+              "end": 880,
+              "rank": 7
+            }
+          ]
+        }
+      ],
+      "date_note": "",
+      "removed_from_context": [
+        {
+          "doc_id": "sluzhebnaya-zapiska-ob-arkhive-dogovorov",
+          "start": 615,
+          "end": 696,
+          "note": "Встроенная инструкция для ИИ удалена: не является положением документа"
+        }
+      ]
+    },
     "timing_ms": {
-      "search": 16,
-      "generate": 5674,
-      "verify": 22,
-      "total": 5719
+      "search": 8,
+      "generate": 4,
+      "verify": 14,
+      "total": 32
     },
     "debug": {}
   }

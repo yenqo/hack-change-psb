@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Callable
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.1"
 
 _CORE_MODULES = ("config", "textproc", "dates", "kb", "runtime", "llm", "index", "prompts", "checks", "pipeline")
 
