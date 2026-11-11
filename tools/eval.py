@@ -143,7 +143,7 @@ def run_target(target: str, rows: list[dict], label: str, stage: str, chat_cache
             raise RuntimeError(f"{target} упал: {proc.stderr[-3000:]}")
         with open(work / "submission.csv", encoding="utf-8", newline="") as f:
             answers = {r["id"]: r["answer"] for r in csv.DictReader(f)}
-        debug = {}
+        debug, contexts = {}, {}
         if (work / "debug.jsonl").is_file():
             by_q = {r["question"]: r["id"] for r in rows}
             for line in (work / "debug.jsonl").read_text(encoding="utf-8").splitlines():
@@ -151,7 +151,9 @@ def run_target(target: str, rows: list[dict], label: str, stage: str, chat_cache
                 qid = by_q.get(rec.get("question"))
                 if qid:
                     debug[qid] = {k: rec.get(k) for k in ("level", "unverified", "draft", "laws", "company",
-                                                          "date_note", "prompt_chars")}
+                                                          "date_note", "prompt_chars", "law_hybrid", "law_order",
+                                                          "rerank_used", "law_chunks", "law_whole")}
+                    contexts[qid] = rec.get("user_msg")
         per_q = {r["id"]: {"calls": 0, "chat_sec": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
                            "cached_tokens": 0} for r in rows}
         untagged = 0
@@ -180,6 +182,10 @@ def run_target(target: str, rows: list[dict], label: str, stage: str, chat_cache
     }
     RUNS.mkdir(parents=True, exist_ok=True)
     (RUNS / f"{label}.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    if contexts:  # полные сообщения модели (для диагностики, tools/diagnose.py) — отдельно и сжато
+        import gzip
+        with gzip.open(RUNS / f"{label}.contexts.json.gz", "wt", encoding="utf-8") as f:
+            json.dump(contexts, f, ensure_ascii=False)
     print(f"[{label}] готово: {elapsed:.0f} c, токенов {tokens:,}, вызовов чата {proxy.stats['chat']} "
           f"(из кэша {proxy.stats['chat_cached']}), ошибок {proxy.stats['chat_err']}, без привязки {untagged}".replace(",", " "), flush=True)
     for e, n in sorted(proxy.errors.items(), key=lambda x: -x[1])[:5]:

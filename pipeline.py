@@ -72,7 +72,9 @@ class Prepared:
     qvec: list | None = None
 
 
-def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_chars: int = LAW_BUDGET_CHARS):
+def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_chars: int = LAW_BUDGET_CHARS,
+               diag: dict | None = None):
+    """diag — необязательный словарь для диагностики: ранжирование законов до и после реранкера (на отбор не влияет)."""
     query = prep.current
     if prep.history:
         query += " " + " ".join(t for r, t in prep.history if r == "user")
@@ -141,6 +143,8 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
     for r, ci in enumerate(order):
         rank_of.setdefault(kb.chunks[ci].doc, r)
     law_items = sorted(items.items(), key=lambda x: rank_of.get(x[0], 999))
+    if diag is not None:
+        diag.update(law_hybrid=list(ranked[:40]), law_order=list(order[:40]), rerank_used=order is not ranked)
     return law_items, order
 
 
@@ -266,7 +270,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     elif runtime.FLAGS.compact:
         level = min(level, 2)
     law_budget = {4: LAW_BUDGET_CHARS, 3: 8000, 2: 4000}.get(level, 2000)
-    law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget)
+    sel: dict = {}
+    law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget, diag=sel)
     comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1)
     dnote = date_note(qtext, kb)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history)
@@ -354,7 +359,9 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     record = {"question": qtext, "current": prep.current, "level": level,
               "laws": [(kb.docs[d].label, "целиком" if chs is None else [c.label for c in chs]) for d, chs in law_items],
               "company": [d.label for d in comp], "date_note": dnote, "draft": draft, "unverified": bad,
-              "final": ans, "prompt_chars": len(user_msg)}
+              "final": ans, "prompt_chars": len(user_msg), **sel,
+              "law_chunks": [c.idx for _, chs in law_items if chs for c in chs],
+              "law_whole": [d for d, chs in law_items if chs is None], "user_msg": user_msg}
     if CHECK_REFS:
         record["unverified_refs"] = refs
     debug_dump(record)

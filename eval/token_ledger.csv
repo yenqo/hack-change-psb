@@ -62,3 +62,17 @@ ts,stage,purpose,model,calls,prompt_tokens,completion_tokens,total_tokens,cached
 2026-11-11 12:56:06,10_contract,примеры контракта,deepseek-v4.1-flash,1,8840,80,8920,0
 2026-11-11 12:56:36,10_contract,примеры контракта,deepseek-v4.1-flash,3,28254,232,28486,0
 2026-11-11 12:57:02,10_contract,примеры контракта,deepseek-v4.1-flash,3,26788,386,27174,0
+2026-11-11 17:14:54,R0_calib,прогон current calib_demo_r1,deepseek-v4.1-flash,10,84894,616,85510,0
+2026-11-11 17:15:20,R0_calib,прогон current calib_demo_r1,deepseek-v4.1-flash,9,82360,734,83094,8192
+2026-11-11 17:16:09,R0_calib,судья,deepseek-v4.1-flash,32,24984,1994,26978,0
+2026-11-11 17:17:37,R0_calib,судья,deepseek-v4.1-flash,32,23160,2036,25196,0
+2026-11-11 17:18:08,R0_calib,прогон current calib_demo_r2,deepseek-v4.1-flash,6,47758,392,48150,36480
+2026-11-11 17:18:38,R0_calib,прогон current calib_demo_r2,deepseek-v4.1-flash,10,93169,755,93924,90112
+2026-11-11 17:18:47,R0_calib,прогон current calib_demo_r2,deepseek-v4.1-flash,3,26327,224,26551,17280
+2026-11-11 17:19:39,R0_calib,судья,deepseek-v4.1-flash,34,26634,2205,28839,0
+2026-11-11 17:20:38,R0_calib,судья,deepseek-v4.1-flash,34,24696,2203,26899,0
+2026-11-11 17:21:07,R0_calib,прогон current calib_demo_r3,deepseek-v4.1-flash,5,38918,275,39193,38144
+2026-11-11 17:21:37,R0_calib,прогон current calib_demo_r3,deepseek-v4.1-flash,10,93350,709,94059,71296
+2026-11-11 17:21:49,R0_calib,прогон current calib_demo_r3,deepseek-v4.1-flash,4,34986,345,35331,17024
+2026-11-11 17:22:42,R0_calib,судья,deepseek-v4.1-flash,32,25162,1990,27152,0
+2026-11-11 17:26:49,R0_calib,судья,deepseek-v4.1-flash,32,23338,2077,25415,0
