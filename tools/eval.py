@@ -525,7 +525,7 @@ def calibration_report(labels: list[str]) -> str:
 def main() -> int:
     global GOLDEN
     ap = argparse.ArgumentParser()
-    ap.add_argument("--set", choices=list(SETS), default="golden", help="набор вопросов")
+    ap.add_argument("--set", default="golden", help=f"набор вопросов: {', '.join(SETS)} или путь к CSV (сценарии агента)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("run")
     p.add_argument("--target", choices=list(TARGETS), required=True)
@@ -549,7 +549,7 @@ def main() -> int:
     p.add_argument("--repeats", type=int, default=3)
     sub.add_parser("tokens")
     args = ap.parse_args()
-    GOLDEN = SETS[args.set]
+    GOLDEN = SETS[args.set] if args.set in SETS else (ROOT / args.set).resolve()
 
     if args.cmd == "run":
         rows = select(load_golden(), args.split, args.ids)

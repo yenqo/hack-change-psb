@@ -14,7 +14,7 @@ from xml.etree import ElementTree as ET
 
 from config import CHUNK_MAX, DATA_DIR, log
 from textproc import CODE_RE, STEMMER, STOPWORDS, WORD_RE, norm, tokenize
-from dates import fmt_date, mkdate
+from dates import DATE_NUM, DMY_TEXT, fmt_date, mkdate, month_no
 
 
 @dataclass
@@ -32,6 +32,7 @@ class Doc:
     export_date: str = ""
     art_notes: list = field(default_factory=list)
     removed: list = field(default_factory=list)
+    amendments: list = field(default_factory=list)   # R4: что документ меняет или дополняет — дата и условие
     body: str = ""             # для закона: текст статьи без служебной шапки, с пометками редакции
     search_extra: str = ""     # заголовок для поиска (с главой НК), если отличается от показываемого
 
@@ -538,6 +539,7 @@ def build_kb() -> KB:
             log(f"Удалены встроенные инструкции ({len(removed)}) в документе: {doc.label}")
         if kind == "company":
             company_meta(doc)
+            doc.amendments = company_amendments(doc)
             new = company_chunks(doc, len(chunks))
         else:
             new = parse_law(doc, len(chunks))
@@ -729,3 +731,50 @@ def locate_chunks(d: Doc, chunks: list[Chunk]) -> None:
         c.start = min(a for a, _ in found)
         c.end = max(b for _, b in found)
         cursor = c.start
+
+
+# ---------------------------------------------------------------------------
+# R4: изменения и дополнения других документов — дата начала и условие применения
+# ---------------------------------------------------------------------------
+
+_DATE_ANY = r"(\d{1,2}\.\d{1,2}\.\d{4}|\d{1,2}\s+[а-яё]+\s+\d{4})"
+
+
+def _parse_date(raw: str):
+    m = DATE_NUM.search(raw)
+    if m:
+        return mkdate(*m.groups())
+    m = DMY_TEXT.search(raw)
+    if m and month_no(m.group(2)):
+        return mkdate(m.group(1), str(month_no(m.group(2))), m.group(3))
+    return None
+
+
+def _sentences(text: str) -> list[str]:
+    out = []
+    for line in text.split("\n"):
+        out += [x.strip() for x in re.split(r"(?<=[.!?])\s+(?=[А-ЯЁ«])", line) if x.strip()]
+    return out
+
+
+def company_amendments(d: Doc) -> list[dict]:
+    """Из текста документа: «С <даты> …» (начало действия требования), «… подписан(ы) после <даты>» (условие применения),
+    «в дополнение к … п. N …» / «Изложить пункт N договора …» (что меняется). Только сведения из самого документа."""
+    target = ""
+    m = re.search(r"в дополнение к [^.]*?(п\.\s*[\d.]+[^.()]*?(?:\([^)]*\))?)", d.text)
+    if m:
+        target = "дополняет " + m.group(1).strip()
+    m = re.search(r"[Ии]зложить пункт\s+([\d.]+)\s+договора", d.text)
+    if m:
+        parent = re.search(r"к договору[^\n]*?№\s*([\w\-/]+)", d.text)
+        target = f"меняет п. {m.group(1)} договора" + (f" № {parent.group(1)}" if parent else "")
+    out = []
+    for sent in _sentences(d.text):
+        m = re.match(rf"[Сс]\s+{_DATE_ANY}\s*(?:г\.)?", sent)
+        if m and _parse_date(m.group(1)):
+            out.append({"kind": "from", "date": _parse_date(m.group(1)), "condition": sent[:220], "target": target})
+            continue
+        m = re.search(rf"(?:подписан\w*|заключ\w*)\s+после\s+{_DATE_ANY}", sent)
+        if m and _parse_date(m.group(1)):
+            out.append({"kind": "after", "date": _parse_date(m.group(1)), "condition": sent[:220], "target": target})
+    return out

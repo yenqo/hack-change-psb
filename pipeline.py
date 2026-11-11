@@ -10,10 +10,10 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (CHECK_REFS, DATE_CONDITIONS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import expand_query
-from dates import date_note, event_periods
+from dates import date_conditions, date_note, event_periods
 from kb import doc_clauses, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
@@ -283,6 +283,9 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
     law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget, diag=sel)
     comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1, diag=sel)
     dnote = date_note(qtext, kb)
+    if DATE_CONDITIONS:  # R4: условия документов-изменений и редакции законов в контексте
+        extra = date_conditions(qtext, kb, [(kb.docs[d], chs) for d, chs in law_items])
+        dnote = "\n".join(x for x in (dnote, extra) if x)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history)
     system = SYSTEM_TEXT if level >= 3 else (SYSTEM_TEXT_SHORT if level == 2 else SYSTEM_TEXT_MINI)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]

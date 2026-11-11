@@ -44,6 +44,7 @@ TEST_ENV = {
     "SOLUTION_LEVEL_FORECAST": "0",
     "SOLUTION_FINAL_PASS": "0",
     "SOLUTION_CONCISE": "0",      # golden master — промпт v1.3; B9 проверяет tests/test_pending.py
+    "SOLUTION_DATE_CONDITIONS": "0",
 }
 PLATFORM_VARS = ["LLM_BASE_URL", "BASE_URL", "OPENAI_BASE_URL", "LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDER_API_KEY",
                  "RERANKER_API_KEY", "LLM_MODEL", "GEN_MODEL", "OPENAI_MODEL", "EMB_MODEL", "RERANKER_MODEL",
@@ -59,7 +60,8 @@ def target() -> str:
 
 # Значения TEST_ENV, которые тест может переопределить через окружение подпроцесса
 OVERRIDABLE = {"SOLUTION_PREBUILT_INDEX", "SOLUTION_SOFT_DEGRADE", "SOLUTION_RERANK_RECHECK",
-               "SOLUTION_LEVEL_FORECAST", "SOLUTION_FINAL_PASS", "SOLUTION_CONCISE"}
+               "SOLUTION_LEVEL_FORECAST", "SOLUTION_FINAL_PASS", "SOLUTION_CONCISE",
+               "SOLUTION_DATE_CONDITIONS"}
 
 
 def apply_env(extra: dict | None = None) -> None:

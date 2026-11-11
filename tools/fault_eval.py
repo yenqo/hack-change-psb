@@ -32,6 +32,8 @@ CONFIGS = {
     "B5–B8": {"SOLUTION_SOFT_DEGRADE": "1", "SOLUTION_RERANK_RECHECK": "1", "SOLUTION_LEVEL_FORECAST": "1",
               "SOLUTION_FINAL_PASS": "1"},
 }
+# задачи второго раунда — поверх принятой конфигурации (B5–B8)
+CONFIGS["B5–B8+R4"] = {**CONFIGS["B5–B8"], "SOLUTION_DATE_CONDITIONS": "1"}
 SEEDS = [1, 2, 3]
 RESILIENCE = [  # (название, сценарий, доп. окружение)
     ("без сбоев", "normal", {}),
