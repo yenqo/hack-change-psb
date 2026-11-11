@@ -81,6 +81,9 @@ FIX_DOCNUM = env("SOLUTION_FIX_DOCNUM", "") == "1"     # B3: номера док
 CHECK_REFS = env("SOLUTION_CHECK_REFS", "") == "1"     # 7.1: проверка номеров пунктов и документов в ответе
 DATE_CONDITIONS = env("SOLUTION_DATE_CONDITIONS", "") == "1"   # R4: справка по датам с условиями и редакциями законов
 CROSS_REFS = env("SOLUTION_CROSS_REFS", "") == "1"             # R6: фрагменты законов, на которые ссылаются найденные
+REWRITE = env("SOLUTION_REWRITE", "") == "1"                   # R7: переформулирование запроса (диалог / слабый поиск)
+REWRITE_COS = 0.58     # R7: поиск «слабый», если лучший косинус и по законам, и по документам компании ниже порога
+REWRITE_BM25 = 10.0    # R7: то же без эмбеддингов — по лучшему BM25
 CONCISE = env("SOLUTION_CONCISE", "1") != "0"            # B9 (принято): отвечать строго на вопрос, без лишних сведений
 SOFT_DEGRADE = env("SOLUTION_SOFT_DEGRADE", "1") != "0"  # B5 (принято): разовый 4xx не понижает уровень на весь прогон
 RERANK_RECHECK = env("SOLUTION_RERANK_RECHECK", "1") != "0"  # B6 (принято): реранкер отключается временно

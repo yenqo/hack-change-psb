@@ -153,7 +153,7 @@ def run_target(target: str, rows: list[dict], label: str, stage: str, chat_cache
                     debug[qid] = {k: rec.get(k) for k in ("level", "unverified", "draft", "laws", "company",
                                                           "date_note", "prompt_chars", "law_hybrid", "law_order",
                                                           "rerank_used", "law_chunks", "law_whole", "law_reason",
-                                                          "law_xref", "law_absent")}
+                                                          "law_xref", "law_absent", "rewrite")}
                     contexts[qid] = rec.get("user_msg")
         per_q = {r["id"]: {"calls": 0, "chat_sec": 0.0, "prompt_tokens": 0, "completion_tokens": 0,
                            "cached_tokens": 0} for r in rows}

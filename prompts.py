@@ -152,7 +152,8 @@ def law_block(kb: KB, items: list[tuple[int, list[Chunk] | None]], xref: dict | 
 
 
 def build_user_message(kb: KB, company_docs: list[Doc], law_items, dnote: str, current: str,
-                       history: list[tuple[str, str]], xref: dict | None = None, absent: list | None = None) -> str:
+                       history: list[tuple[str, str]], xref: dict | None = None, absent: list | None = None,
+                       standalone: str | None = None) -> str:
     parts = [f"Текущая дата: {today().strftime('%d.%m.%Y')}."]
     parts.append("=== ДОКУМЕНТЫ КОМПАНИИ (полные тексты) ===\n" + "\n\n".join(doc_block(d) for d in company_docs))
     if law_items:
@@ -162,8 +163,29 @@ def build_user_message(kb: KB, company_docs: list[Doc], law_items, dnote: str, c
     if history:
         h = "\n".join(("Пользователь: " if r == "user" else "Ассистент: ") + t for r, t in history)
         parts.append("=== ИСТОРИЯ ДИАЛОГА (для понимания контекста; утверждения ассистента проверяй по документам) ===\n" + h)
+    if standalone:  # R7: после неизменной части запроса
+        parts.append("=== ВОПРОС СВОИМИ СЛОВАМИ (автоматическая переформулировка для поиска; отвечай на вопрос "
+                     "пользователя ниже) ===\n" + standalone)
     parts.append("=== ВОПРОС ПОЛЬЗОВАТЕЛЯ (ответь на него) ===\n" + current)
     return "\n\n".join(parts)
+
+
+# R7: переформулирование запроса — без документов; системный промпт постоянный (кэш провайдера)
+SYSTEM_REWRITE = (
+    "Ты помогаешь поиску по базе знаний юридического ассистента компании: договоры и внутренние регламенты компании, "
+    "статьи НК РФ, ТК РФ, КоАП РФ и федеральных законов. По истории диалога и последнему вопросу пользователя верни "
+    "только JSON без пояснений и без markdown: {\"question\": \"...\", \"queries\": [\"...\", \"...\"]}.\n"
+    "question — последний вопрос пользователя, понятный без истории: подставь из истории упомянутые договоры, "
+    "контрагентов, номера документов и предмет вопроса; разговорные и сокращённые слова замени официальными терминами "
+    "(«испыталка» — испытательный срок, «зп» — заработная плата, «мрот» — минимальный размер оплаты труда). "
+    "Не добавляй фактов, сумм, сроков и дат, которых нет в вопросе или истории, и не отвечай на вопрос.\n"
+    "queries — 2–3 коротких поисковых запроса официальным языком документов: термины, названия налогов и "
+    "правонарушений, вероятные статьи кодексов, названия договоров.")
+
+
+def rewrite_message(current: str, history: list[tuple[str, str]]) -> str:
+    h = "\n".join(("Пользователь: " if r == "user" else "Ассистент: ") + t for r, t in history)
+    return (f"История диалога:\n{h}\n\n" if h else "") + f"Последний вопрос пользователя:\n{current}"
 
 
 SYSTEM_TINY = ("Ты юридический ассистент. Отвечай только по приложенным фрагментам документов и указывай документ и "

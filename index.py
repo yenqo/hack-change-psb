@@ -187,6 +187,22 @@ class Index:
         return [i for i, _ in sorted(rrf.items(), key=lambda x: -x[1])]
 
 
+    def hybrid_multi(self, pairs: list[tuple[str, list[float] | None]], kinds: set[str]) -> list[int]:
+        """R7: RRF по спискам BM25 и эмбеддингов для нескольких запросов (исходный вопрос + переформулировки)."""
+        allowed = {c.idx for c in self.kb.chunks if self.kb.docs[c.doc].kind in kinds}
+        lists = []
+        for query, qvec in pairs:
+            lists.append([i for i, _ in self.bm25(expand_query(query)) if i in allowed][:80])
+            d = [i for i, _ in self.dense(qvec) if i in allowed][:80]
+            if d:
+                lists.append(d)
+        rrf: dict[int, float] = {}
+        for lst in lists:
+            for r, i in enumerate(lst):
+                rrf[i] = rrf.get(i, 0.0) + 1.0 / (60 + r)
+        return [i for i, _ in sorted(rrf.items(), key=lambda x: -x[1])]
+
+
 def embed_questions(preps: list[Prepared], cap: float = 25.0) -> None:
     qtexts = [(p.current + " " + " ".join(t for r, t in p.history if r == "user"))[:2000] for p in preps]
     batches = [list(range(i, min(i + 16, len(qtexts)))) for i in range(0, len(qtexts), 16)]

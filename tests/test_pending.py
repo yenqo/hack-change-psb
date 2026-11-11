@@ -267,3 +267,88 @@ class CrossRefsTest(unittest.TestCase):
         res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_CROSS_REFS": "1"})
         self.assertEqual(len(res["answers"]), 18)
         self.assertEqual(res["stats"]["level4"], 18)
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class RewriteTest(unittest.TestCase):
+    """R7: переформулирование запроса (SOLUTION_REWRITE)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.core = harness.load_core()
+        with contextlib.redirect_stderr(io.StringIO()):
+            cls.kb = cls.core.build_kb()
+            cls.index = cls.core.Index(cls.kb)
+
+    def test_parse(self) -> None:
+        p = self.core._parse_rewrite
+        self.assertEqual(p('```json\n{"question": "Срок испытания главбуха?", "queries": ["срок испытания", 5]}\n```'),
+                         ("Срок испытания главбуха?", ["срок испытания"]))
+        self.assertIsNone(p("не JSON"))
+        self.assertIsNone(p('{"queries": ["x"]}'))
+
+    def call(self, current: str, history: list, level: int = 4, reply: str | None = None):
+        calls = []
+
+        def fake_chat(messages, max_tokens=0, timeout=0.0):
+            calls.append(messages)
+            return reply if reply is not None else json.dumps(
+                {"question": "Какой максимальный срок испытания главного бухгалтера?",
+                 "queries": ["срок испытания главного бухгалтера", "ТК РФ статья 70 испытание"]}, ensure_ascii=False)
+
+        harness.patch_everywhere(self.core, "chat", fake_chat)
+        self.core.TIMING.add("chat_full", 5.0)   # переформулирование — только после первых замеров времени
+        try:
+            prep = self.core.Prepared(current, history)
+            info: dict = {}
+            self.core.maybe_rewrite(self.kb, self.index, prep, level, info)
+        finally:
+            harness.patch_everywhere(self.core, "chat", self.core._modules[[m.__name__ for m in self.core._modules]
+                                                                            .index("llm")].chat)
+        return prep, info, calls
+
+    def test_dialog_fires_and_feeds_search(self) -> None:
+        prep, info, calls = self.call("Испыталку ему скок максимум?", [("user", "У нас выходит новый главбух."),
+                                                                      ("assistant", "Чем помочь?")])
+        self.assertEqual(len(calls), 1)
+        sys_msg, user_msg = calls[0][0]["content"], calls[0][1]["content"]
+        self.assertTrue(sys_msg.startswith("Ты помогаешь поиску"))
+        self.assertNotIn("ДОКУМЕНТЫ", user_msg)          # без документов
+        self.assertIn("У нас выходит новый главбух.", user_msg)
+        self.assertEqual(prep.standalone, "Какой максимальный срок испытания главного бухгалтера?")
+        self.assertEqual([q for q, _ in prep.extra][0], prep.standalone)
+        self.assertEqual(info["rewrite"]["queries"], ["срок испытания главного бухгалтера", "ТК РФ статья 70 испытание"])
+        ranked = self.core._search(self.index, prep.current, prep, {"law"})
+        self.assertEqual(self.kb.docs[self.kb.chunks[ranked[0]].doc].label, "ТК РФ, ст. 70")
+        msg = self.core.build_user_message(self.kb, [], [], "", prep.current, prep.history, standalone=prep.standalone)
+        self.assertLess(msg.index("ВОПРОС СВОИМИ СЛОВАМИ"), msg.index("=== ВОПРОС ПОЛЬЗОВАТЕЛЯ"))
+        # второй раз (финальный проход) — без нового вызова
+        n = len(calls)
+        self.core.maybe_rewrite(self.kb, self.index, prep, 4, {})
+        self.assertEqual(len(calls), n)
+
+    def test_waits_for_timing(self) -> None:
+        self.core.TIMING.drop("chat_full")
+        calls = []
+        harness.patch_everywhere(self.core, "chat", lambda *a, **k: calls.append(1) or "{}")
+        try:
+            self.core.maybe_rewrite(self.kb, self.index, self.core.Prepared("Испыталку скок?", [("user", "главбух")]), 4)
+        finally:
+            harness.patch_everywhere(self.core, "chat", self.core._modules[[m.__name__ for m in self.core._modules]
+                                                                            .index("llm")].chat)
+        self.assertEqual(calls, [])
+
+    def test_skips(self) -> None:
+        _, _, calls = self.call("Испыталку скок?", [("user", "главбух")], level=3)   # пониженный уровень
+        self.assertEqual(calls, [])
+        _, _, calls = self.call("Какой гарантийный срок по договору поставки № П-17/2024 с ООО «Альфа-Трейд»?", [])
+        self.assertEqual(calls, [])                                                   # поиск сильный, истории нет
+        prep, _, calls = self.call("Испыталку скок?", [("user", "главбух")], reply="не JSON")
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(prep.standalone)                                            # ответ не разобран — как без R7
+        self.assertIsNone(prep.extra)
+
+    def test_run_with_flag(self) -> None:
+        res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_REWRITE": "1"})
+        self.assertEqual(len(res["answers"]), 18)
+        self.assertEqual(res["stats"]["level4"], 18)

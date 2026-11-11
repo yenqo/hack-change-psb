@@ -34,6 +34,9 @@ def fake_vector(text: str, dim: int = 64) -> list[float]:
 
 
 def fake_answer(messages: list[dict]) -> str:
+    if messages and str(messages[0].get("content", "")).startswith("Ты помогаешь поиску"):   # R7: переформулирование
+        last = str(messages[-1].get("content", "")).rsplit("Последний вопрос пользователя:", 1)[-1].strip()
+        return json.dumps({"question": last, "queries": [last[:60]]}, ensure_ascii=False)
     h = _sha(json.dumps(messages, ensure_ascii=False, sort_keys=True))
     n = int(h[:8], 16)
     user = messages[-1].get("content") or ""

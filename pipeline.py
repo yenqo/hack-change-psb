@@ -10,14 +10,14 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import expand_query
 from dates import date_conditions, date_note, event_periods
 from kb import cross_refs, doc_clauses, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
-from prompts import (REPAIR_REFS, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message,
+from prompts import (REPAIR_REFS, SYSTEM_REWRITE, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message, rewrite_message,
                      repair_refs_message)
 from checks import (_CLAUSE_REF, _applies, _clause_key, _expand_nums, _mentions, _quote_span, clean_answer,
                     drop_ref_sentences, drop_sentences, kb_clauses, unverified, unverified_refs)
@@ -70,6 +70,92 @@ class Prepared:
     current: str
     history: list
     qvec: list | None = None
+    # R7: переформулирование (один раз на вопрос; финальный проход B8 берёт готовое)
+    rewrite_done: bool = False
+    standalone: str | None = None
+    extra: list | None = None      # [(поисковый запрос, его эмбеддинг или None)]
+
+
+def _search(index: Index, query: str, prep: Prepared, kinds: set[str]) -> list[int]:
+    if prep.extra:
+        return index.hybrid_multi([(query, prep.qvec)] + prep.extra, kinds)
+    return index.hybrid(query, prep.qvec, kinds)
+
+
+def weak_search(kb: KB, index: Index, prep: Prepared) -> bool:
+    """R7: лучший результат поиска слабый и по законам, и по документам компании (вопрос «не узнан» поиском)."""
+    if prep.qvec is not None and index.vecs is not None:
+        best = max((sc for _, sc in index.dense(prep.qvec)[:1]), default=0.0)
+        return best < REWRITE_COS
+    query = prep.current + " " + " ".join(t for r, t in prep.history if r == "user")
+    best = max((sc for _, sc in index.bm25(expand_query(query))[:1]), default=0.0)
+    return best < REWRITE_BM25
+
+
+def _parse_rewrite(text: str) -> tuple[str, list[str]] | None:
+    import json
+    m = re.search(r"\{.*\}", text or "", re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except ValueError:
+        return None
+    q = data.get("question") if isinstance(data, dict) else None
+    qs = data.get("queries") if isinstance(data, dict) else None
+    if not isinstance(q, str) or not q.strip():
+        return None
+    qs = [x.strip()[:300] for x in qs if isinstance(x, str) and x.strip()][:3] if isinstance(qs, list) else []
+    return q.strip()[:600], qs
+
+
+def maybe_rewrite(kb: KB, index: Index, prep: Prepared, level: int, info: dict | None = None) -> None:
+    """R7: вызов LLM только когда он вероятно нужен — есть история диалога или поиск слабый. Вход — история и вопрос,
+    без документов. При нехватке времени (уровень ниже полного, мало времени на вопрос) пропускается первым."""
+    if prep.rewrite_done:
+        return
+    f = runtime.FLAGS
+    if level < 4 or f.compact or f.minimal or f.tiny:
+        return
+    if not prep.history and not weak_search(kb, index, prep):
+        return
+    # пропускается первым: прогноз B7 для полного уровня должен сходиться и с лишним вызовом на каждый оставшийся вопрос
+    with runtime.PROG.lock:
+        left = max(1, runtime.PROG.n - runtime.PROG.finished)
+    extra = runtime.TIMING.get("rewrite", runtime.TIMING.get("chat_full", 8.0))
+    need = left * (runtime.question_cost(4) + extra) / max(1, MAX_WORKERS) * 1.2
+    measured = MODE == "web" or "chat_full" in runtime.TIMING.ema   # до первых замеров прогноз — по умолчаниям
+    if not measured or remaining() < 120 or need > remaining() - 15:
+        f.inc("rewrite_skipped")
+        return
+    prep.rewrite_done = True
+    t0 = time.monotonic()
+    try:
+        raw = chat([{"role": "system", "content": SYSTEM_REWRITE},
+                    {"role": "user", "content": rewrite_message(prep.current, prep.history)}],
+                   max_tokens=300, timeout=30.0)
+    except APIError as exc:
+        f.inc("rewrite_failed")
+        log(f"Переформулирование не удалось: {exc}")
+        return
+    runtime.TIMING.add("rewrite", time.monotonic() - t0)
+    parsed = _parse_rewrite(raw)
+    if not parsed:
+        f.inc("rewrite_failed")
+        return
+    standalone, queries = parsed
+    queries = [standalone] + [q for q in queries if q != standalone]
+    vecs: list = [None] * len(queries)
+    if index.vecs is not None and prep.qvec is not None:
+        try:
+            vecs = embed(queries)
+        except APIError:
+            vecs = [None] * len(queries)
+    prep.standalone = standalone
+    prep.extra = list(zip(queries, vecs))
+    f.inc("rewrite")
+    if info is not None:
+        info["rewrite"] = {"standalone": standalone, "queries": queries[1:], "sec": round(time.monotonic() - t0, 2)}
 
 
 def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_chars: int = LAW_BUDGET_CHARS,
@@ -78,7 +164,7 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
     query = prep.current
     if prep.history:
         query += " " + " ".join(t for r, t in prep.history if r == "user")
-    ranked = index.hybrid(query, prep.qvec, {"law"})[:CANDIDATES]
+    ranked = _search(index, query, prep, {"law"})[:CANDIDATES]
     if not ranked:
         return [], []
     # Если по BM25 вопрос явно про документы компании, законов даём меньше: меньше шума и быстрее.
@@ -92,7 +178,7 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
             budget = min(budget, 5000)
     order = ranked
     if use_rerank:
-        rr = rerank(prep.current if not prep.history else query[:2000],
+        rr = rerank(prep.standalone or (prep.current if not prep.history else query[:2000]),
                     [kb.chunks[i].search[:1200] for i in ranked], top_n=len(ranked))
         if rr:
             rr_sorted = [ranked[i] for i, _ in sorted(rr, key=lambda x: -x[1])]
@@ -203,7 +289,7 @@ def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False,
     limit = 5000 if minimal else (10000 if compact else COMPANY_FULL_LIMIT)
     max_docs = 2 if minimal else (4 if compact else 8)
     query = prep.current + " " + " ".join(t for _, t in prep.history)
-    ranked = index.hybrid(query, prep.qvec, {"company"})
+    ranked = _search(index, query, prep, {"company"})
     chosen: list[Doc] = []
     size = 0
     for ci in ranked:
@@ -321,6 +407,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
         level = min(level, 2)
     law_budget = {4: LAW_BUDGET_CHARS, 3: 8000, 2: 4000}.get(level, 2000)
     sel: dict = {}
+    if REWRITE:  # R7
+        maybe_rewrite(kb, index, prep, level, sel)
     law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget, diag=sel)
     comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1, diag=sel)
     dnote = date_note(qtext, kb)
@@ -328,7 +416,8 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
         extra = date_conditions(qtext, kb, [(kb.docs[d], chs) for d, chs in law_items])
         dnote = "\n".join(x for x in (dnote, extra) if x)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history,
-                                  xref=sel.get("law_xref"), absent=sel.get("law_absent"))
+                                  xref=sel.get("law_xref"), absent=sel.get("law_absent"),
+                                  standalone=prep.standalone if REWRITE else None)
     system = SYSTEM_TEXT if level >= 3 else (SYSTEM_TEXT_SHORT if level == 2 else SYSTEM_TEXT_MINI)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
     if trace:

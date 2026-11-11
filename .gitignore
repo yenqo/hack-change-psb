@@ -25,3 +25,6 @@ eval/cache/
 .env
 .env.*
 !.env.example
+
+# Personal notes (not for the repo)
+PROJECT_OVERVIEW.md
