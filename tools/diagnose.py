@@ -20,6 +20,7 @@ import csv
 import gzip
 import io
 import json
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -112,7 +113,11 @@ def main() -> int:
             real_nums = [s for s, _ in checks.unverified(ans, ctx, row["question"])] if ctx else None
             real_refs = [s for s, _ in checks.unverified_refs(base, ans, row["question"], ctx_docs)] if ctx_docs else None
             q = jd["q"].get(qid, {})
+            fw = lambda t: (re.match(r"^\W*(да|нет)\b", t, re.I) or [None, None])[1]   # noqa: E731
+            yes_no = (fw(ans) or "").lower() or None
+            ref_yes_no = (fw(row["expected"]) or "").lower() or None
             recs.append({
+                "yes_no": yes_no, "ref_yes_no": ref_yes_no,
                 "label": lb, "id": qid, "type": row["type"], "fewshot": row["in_fewshot"] == "да", "fallback": fallback,
                 "score": q.get("score"), "rounds": q.get("rounds", []), "judge_fab": q.get("fabricated"),
                 "need": len(need), "found": found, "missing": missing, "pos": pos,
@@ -188,6 +193,12 @@ def report(recs: list[dict]) -> None:
         print("\nНастоящие выдумки (нет в контексте):\n")
         for r in real:
             print(f"- {r['label']}/{r['id']}: числа {r['real_nums']}, ссылки {r['real_refs']}")
+    # (г) да / нет
+    yn = [r for r in recs if r["yes_no"]]
+    mism = [r for r in yn if r["ref_yes_no"] and r["ref_yes_no"] != r["yes_no"]]
+    print(f"\n## (г) Первое «Да» / «Нет» (B2)\n\nОтветов, начинающихся с «Да»/«Нет»: {len(yn)}; расходится с эталоном: {len(mism)}.")
+    for r in mism:
+        print(f"- {r['label']}/{r['id']}: ответ «{r['yes_no']}», эталон «{r['ref_yes_no']}»")
     # (в) длина
     print("\n## (в) Длина\n")
     ours = [r["words"] for r in recs]
