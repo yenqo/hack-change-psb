@@ -10,7 +10,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (ANSWER_TEMPLATE, CHECK_REFS, CONCISE, REWRITE_PROMPT, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (ANSWER_TEMPLATE, CHECK_FIXES, CHECK_REFS, CONCISE, REWRITE_PROMPT, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import STEMMER, STOPWORDS, WORD_RE, expand_query, norm
 from dates import date_conditions, date_note, event_periods
@@ -75,6 +75,15 @@ class Prepared:
     standalone: str | None = None
     extra: list | None = None      # [(поисковый запрос, его эмбеддинг или None)]
     soft4xx_counted: bool = False  # B5: вопрос уже учтён в серии отказов (один раз на вопрос, не на каждую ступень)
+
+
+def _user_text(prep: Prepared) -> str:
+    """Реплики пользователя: история + текущий вопрос (без реплик ассистента)."""
+    return " ".join([t for r, t in prep.history if r == "user"] + [prep.current])
+
+
+def _event_text(qtext: str) -> str:
+    return _user_text(Prepared(*parse_dialog(qtext))) if CHECK_FIXES else qtext
 
 
 def _search(index: Index, query: str, prep: Prepared, kinds: set[str]) -> list[int]:
@@ -433,9 +442,10 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
         maybe_rewrite(kb, index, prep, level, sel)
     law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget, diag=sel)
     comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1, diag=sel)
-    dnote = date_note(qtext, kb)
+    date_text = _user_text(prep) if CHECK_FIXES else qtext   # пакет 2: даты из реплик ассистента — не даты события
+    dnote = date_note(date_text, kb)
     if DATE_CONDITIONS:  # R4: условия документов-изменений и редакции законов в контексте
-        extra = date_conditions(qtext, kb, [(kb.docs[d], chs) for d, chs in law_items])
+        extra = date_conditions(date_text, kb, [(kb.docs[d], chs) for d, chs in law_items])
         dnote = "\n".join(x for x in (dnote, extra) if x)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history,
                                   xref=sel.get("law_xref"), absent=sel.get("law_absent"),
@@ -569,7 +579,7 @@ class Result:
 def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> list[dict]:
     """Ссылки ответа «документ + пункт» → цитаты со смещениями в тексте документа (get_document)."""
     mentions = _mentions(kb, text, qtext)
-    periods = event_periods(qtext)
+    periods = event_periods(_event_text(qtext))
     cites: dict[tuple[int, str | None], dict] = {}
 
     def add(d: Doc, clause: str | None) -> None:
@@ -669,7 +679,7 @@ def build_warnings(kb: KB, qtext: str, info: dict, citations: list[dict], ids: d
             out.append({"code": "removed_instructions", "doc_id": ids[di],
                         "message": f"В документе «{d.label}» удалена встроенная инструкция для ИИ: она не является "
                                    "положением документа и не учитывалась"})
-    if event_periods(qtext):
+    if event_periods(_event_text(qtext)):
         for di in sorted(cited):
             d = kb.docs[di]
             if d.kind == "law":
@@ -700,7 +710,7 @@ def build_context(kb: KB, index: Index, info: dict, prep: Prepared, qtext: str, 
                   citations: list[dict]) -> dict:
     """Что ушло в контекст модели — из тех же объектов, из которых строилось сообщение (info из answer_one).
     Только идентификаторы и смещения в тексте get_document; тексты не передаются."""
-    periods = event_periods(qtext)
+    periods = event_periods(_event_text(qtext))
     cited = {c["doc_id"] for c in citations}
     order = info.get("law_order") or []
     rank = {ci: i + 1 for i, ci in enumerate(order)}

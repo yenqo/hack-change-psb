@@ -519,3 +519,33 @@ class B14FixesTest(unittest.TestCase):
                 "print(f.soft4xx_streak, f.compact, f.minimal, f.tiny)")
         out = run_py(code, {**harness.TEST_ENV, "SOLUTION_SOFT_DEGRADE": "1"})
         self.assertEqual(out, "1 False False False")   # один вопрос — один шаг серии, глобальный режим не понижен
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class CheckFixesTest(unittest.TestCase):
+    """Пакет 2 (SOLUTION_CHECK_FIXES): ложные срабатывания проверки чисел, B1, синонимы, даты только пользователя."""
+
+    CODE = ("import json, checks, textproc, pipeline\n"
+            "ctx = 'Цена 2 000 000 рублей. Неустойка 0,1% за каждый день просрочки.'\n"
+            "r = [checks.unverified(a, ctx, 'вопрос') for a in ('Стоимость — 2 050 рублей.', "
+            "'Неустойка: 2 000 000 × 0,1% = 2 000 рублей за день.', 'Отвечать нужно за один день.')]\n"
+            "a = 'Срок поставки — 10 дней. Договор действует, он подписан 31.12.2020. Источник: договор № П-17/2024, п. 3.1.'\n"
+            "p = pipeline.Prepared('А по договору 2024 года?', [('user', 'Вопрос'), ('assistant', 'Редакция от 01.03.2025.')])\n"
+            "print(json.dumps([[k for _, k in x] for x in r] + [checks.drop_sentences(a, ['31.12.2020']) != a, "
+            "'срочный' in textproc.expand_query('Нужно своевременно оплатить счёт?'), "
+            "'01.03.2025' in pipeline._event_text('Пользователь: Вопрос\\nАссистент: Редакция от 01.03.2025.\\nПользователь: А по договору 2024 года?')], "
+            "ensure_ascii=False))")
+
+    def test_on(self) -> None:
+        out = run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_CHECK_FIXES": "1"})
+        self.assertEqual(json.loads(out), [["amount"], [], [], True, False, False])
+
+    def test_off_is_v13(self) -> None:
+        out = run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_CHECK_FIXES": "0"})
+        self.assertEqual(json.loads(out), [["date"], ["amount"], ["term"], False, True, True])
+
+    def test_embed_bad_payload_is_api_error(self) -> None:
+        code = ("import llm\n"
+                "llm.post_json = lambda *a, **k: {'data': [{'index': 0}]}\n"
+                "try:\n    llm.embed(['x'])\nexcept llm.APIError as e:\n    print('APIError')\n")
+        self.assertEqual(run_py(code, dict(harness.TEST_ENV)), "APIError")

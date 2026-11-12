@@ -6,7 +6,7 @@ import re
 from datetime import date
 from typing import TYPE_CHECKING
 
-from config import ANSWER_MAX_CHARS, FIX_DOCNUM
+from config import ANSWER_MAX_CHARS, CHECK_FIXES, FIX_DOCNUM
 from textproc import norm
 from dates import DATE_NUM, MONTH_WORD, event_periods, month_no
 from kb import doc_clauses
@@ -80,7 +80,10 @@ def _mult(word: str | None) -> float:
 
 def _unit_after(t: str, pos: int) -> str | None:
     """Единица измерения сразу после числа (числительные в скобках пропускаются)."""
-    for tok in re.findall(r"[а-яa-z]+|%|₽", t[pos: pos + 70]):
+    seg = t[pos: pos + 70]
+    if CHECK_FIXES:   # пакет 2: в формуле «2 000 000 × 0,1%» единица соседнего числа не наша
+        seg = re.split(r"[×*=+÷/]|\s[-−]\s|\d", seg, maxsplit=1)[0]
+    for tok in re.findall(r"[а-яa-z]+|%|₽", seg):
         if tok in NUM_WORDS or tok in SKIP_TOKENS:
             continue
         if tok == "%":
@@ -175,7 +178,9 @@ def unverified(answer: str, context: str, question: str) -> list[tuple[str, str]
     bad = [(f"{d:02d}.{mo:02d}.{y}", "date") for d, mo, y in ans_dates if (d, mo, y) not in ctx_dates]
     for v, span, unit in ans_items:
         keys = [_key(v * k) for k in (1, 1e3, 1e6, 1e-3, 1e-6)]
-        if v.is_integer() and 1990 <= v <= 2100:  # год
+        if CHECK_FIXES and unit in TERM_UNITS and v == 1 and not re.search(r"\d", span):   # «за один день»
+            continue
+        if v.is_integer() and 1990 <= v <= 2100 and not (CHECK_FIXES and unit is not None):  # год (не «2 050 рублей»)
             if any(k in units for k in keys):
                 continue
             bad.append((span, "date"))
@@ -226,7 +231,8 @@ SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z«\"(])")
 
 def drop_sentences(answer: str, spans: list[str]) -> str:
     sents = SENT_SPLIT.split(answer)
-    pats = [re.compile(r"(?<![\d.,])" + re.escape(sp) + r"(?![\d.,])", re.I) for sp in spans if sp]
+    tail = r"(?![\d]|[.,]\d)" if CHECK_FIXES else r"(?![\d.,])"   # B1: дата или число перед точкой в конце предложения
+    pats = [re.compile(r"(?<![\d.,])" + re.escape(sp) + tail, re.I) for sp in spans if sp]
     keep = [s for s in sents if not any(p.search(norm(s)) for p in pats)]
     if not keep or all(_is_source(s) for s in keep):   # от ответа осталась бы одна строка «Источник: …»
         return answer
