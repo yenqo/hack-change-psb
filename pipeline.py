@@ -10,9 +10,9 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
-from textproc import expand_query
+from textproc import STEMMER, STOPWORDS, WORD_RE, expand_query, norm
 from dates import date_conditions, date_note, event_periods
 from kb import cross_refs, doc_clauses, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
@@ -176,6 +176,8 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
         top3_law = any(kb.docs[kb.chunks[ci].doc].kind == "law" for ci, _ in allbm[:3])
         if best_comp > 0 and best_law < 0.6 * best_comp and not top3_law:
             budget = min(budget, 5000)
+    # B12: урезанный бюджет (вопрос о документах компании) не распространяется на общие пункты больших статей
+    gp_room = (budget_chars - budget) if GENERAL_POINTS else 0
     order = ranked
     if use_rerank:
         rr = rerank(prep.standalone or (prep.current if not prep.history else query[:2000]),
@@ -217,14 +219,20 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
             continue
         seen_docs.append(d)
         extra = 0
+        room = gp_room if gp_room and _topic_hit(kb.docs[d], query) else 0   # B12: только статья по теме вопроса
         for c in kb.chunks:
             if c.doc != d or c.label.count(",") != 2 or len(c.text) > 700 or "(продолжение" in c.text:
                 continue
-            if c in (items.get(d) or []) or len(c.text) > budget or extra + len(c.text) > 2500:
+            if c in (items.get(d) or []) or len(c.text) > budget + room or extra + len(c.text) > 2500:
                 continue
             items.setdefault(d, [])
             items[d].append(c)  # type: ignore[union-attr]
-            budget -= len(c.text)
+            if len(c.text) > budget:   # B12: недостающее — из запаса урезанного бюджета
+                room -= len(c.text) - budget
+                gp_room -= len(c.text) - budget
+                budget = 0
+            else:
+                budget -= len(c.text)
             extra += len(c.text)
             reasons[c.idx] = "general_point"
     xref: dict[int, str] = {}
@@ -242,6 +250,17 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
         if CROSS_REFS:
             diag.update(law_xref=xref, law_absent=absent)
     return law_items, order
+
+
+_TOPIC_GENERIC = {"налог", "налогов", "ставк", "глав", "кодекс", "стат", "закон", "федеральн", "российск", "федерац", "организац"}
+
+
+def _topic_hit(d: Doc, query: str) -> bool:
+    """B12: вопрос про тему статьи — есть общие основы слов с её названием (с темой главы НК), с учётом синонимов."""
+    title = norm((d.search_extra or d.title).split("«", 1)[-1])
+    stems = {STEMMER.stem(w) for w in WORD_RE.findall(title) if not w.isdigit() and len(w) > 2 and w not in STOPWORDS}
+    q = {STEMMER.stem(w) for w in WORD_RE.findall(norm(expand_query(query))) if len(w) > 2 and w not in STOPWORDS}
+    return bool((stems - _TOPIC_GENERIC) & q)
 
 
 XREF_MAX = 3          # фрагментов, добавленных по отсылкам

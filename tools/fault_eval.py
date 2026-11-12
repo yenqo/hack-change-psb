@@ -36,6 +36,7 @@ CONFIGS = {
 CONFIGS["B5–B8+R4"] = {**CONFIGS["B5–B8"], "SOLUTION_DATE_CONDITIONS": "1"}
 CONFIGS["B5–B8+R6"] = {**CONFIGS["B5–B8"], "SOLUTION_CROSS_REFS": "1"}
 CONFIGS["B5–B8+R7"] = {**CONFIGS["B5–B8"], "SOLUTION_REWRITE": "1"}
+CONFIGS["B5–B8+R7+B12"] = {**CONFIGS["B5–B8+R7"], "SOLUTION_GENERAL_POINTS": "1"}
 SEEDS = [1, 2, 3]
 RESILIENCE = [  # (название, сценарий, доп. окружение)
     ("без сбоев", "normal", {}),

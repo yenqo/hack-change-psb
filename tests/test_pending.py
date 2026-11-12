@@ -352,3 +352,39 @@ class RewriteTest(unittest.TestCase):
         res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_REWRITE": "1"})
         self.assertEqual(len(res["answers"]), 18)
         self.assertEqual(res["stats"]["level4"], 18)
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class GeneralPointsTest(unittest.TestCase):
+    """B12: общие пункты больших статей вне урезанного бюджета (SOLUTION_GENERAL_POINTS)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.core = harness.load_core()
+        with contextlib.redirect_stderr(io.StringIO()):
+            cls.kb = cls.core.build_kb()
+
+    def doc(self, label: str):
+        return next(d for d in self.kb.docs if d.label == label)
+
+    def test_topic(self) -> None:
+        hit = self.core._topic_hit
+        self.assertTrue(hit(self.doc("НК РФ, ст. 164"), "Какую ставку НДС применять к поставкам по договору с «Альфа-Трейд»?"))
+        self.assertFalse(hit(self.doc("НК РФ, ст. 284"), "Какую ставку НДС применять к поставкам по договору с «Альфа-Трейд»?"))
+        self.assertFalse(hit(self.doc("КоАП РФ, ст. 13.11"), "Куда должна быть доставлена партия мебели по спецификации?"))
+        self.assertTrue(hit(self.doc("КоАП РФ, ст. 13.11"), "Какой штраф за обработку персональных данных без согласия?"))
+
+    def test_selection(self) -> None:
+        code = ("import contextlib, io, kb, index, pipeline\n"
+                "with contextlib.redirect_stderr(io.StringIO()):\n"
+                "    b = kb.build_kb(); i = index.Index(b)\n"
+                "p = pipeline.Prepared('Какая ставка НДС применялась к поставкам мебели по договору с «Альфа-Трейд» в 2024 году?', [])\n"
+                "items, _ = pipeline.select_law(b, i, p, use_rerank=False)\n"
+                "print(any(c.label == 'НК РФ, ст. 164, п. 3' for _, cs in items if cs for c in cs))")
+        base = {k: v for k, v in harness.TEST_ENV.items()}
+        self.assertEqual(run_py(code, {**base, "SOLUTION_GENERAL_POINTS": "1"}), "True")
+
+    def test_run_with_flag(self) -> None:
+        res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_GENERAL_POINTS": "1"})
+        self.assertEqual(len(res["answers"]), 18)
+        self.assertEqual(res["stats"]["level4"], 18)
