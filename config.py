@@ -84,7 +84,7 @@ CROSS_REFS = env("SOLUTION_CROSS_REFS", "") == "1"             # R6: фрагм�
 ANSWER_TEMPLATE = env("SOLUTION_ANSWER_TEMPLATE", "1") != "0"  # B14 (принято): ответ «… Источник: …», после источника ничего
 CHUNK_FIXES = env("SOLUTION_CHUNK_FIXES", "") == "1"           # B19–B20: заголовок статьи — к первому пункту; продолжения с вводной фразой
 CHECK_FIXES = env("SOLUTION_CHECK_FIXES", "1") != "0"          # пакет 2 (принято): ложные срабатывания проверок, B1, синонимы, даты
-SOURCE_RULE = env("SOLUTION_SOURCE_RULE", "") == "1"           # B14b: источник — где написано именно то, что в ответе
+SOURCE_RULE = env("SOLUTION_SOURCE_RULE", "1") != "0"          # B14b (принято): источник — где написано именно то, что в ответе
 GENERAL_POINTS = env("SOLUTION_GENERAL_POINTS", "1") != "0"    # B12 (принято): общие пункты больших статей — вне урезанного бюджета
 REWRITE = env("SOLUTION_REWRITE", "1") != "0"                  # R7 (принято): переформулирование запроса (диалог / слабый поиск)
 REWRITE_PROMPT = env("SOLUTION_REWRITE_PROMPT", "1") != "0"     # R7b: 0 — переформулировка только для поиска, модели не показывается
