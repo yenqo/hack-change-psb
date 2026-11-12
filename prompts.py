@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 from typing import TYPE_CHECKING
 
-from config import ANSWER_TEMPLATE, CONCISE, FEWSHOT, today
+from config import ANSWER_TEMPLATE, CONCISE, FEWSHOT, SOURCE_RULE, today
 
 if TYPE_CHECKING:
     from kb import Chunk, Doc, KB
@@ -109,6 +111,19 @@ TEMPLATE_FORMAT = (
     "общие советы.\n"
     "- Обычно 20–60 слов.")
 
+# B14b: модель копировала источник из примера («служебная записка ЮО-7» в вопросе о передаче оригинала, где источник —
+# Регламент, п. 3.2). Правило про источник и примеры без дат писем и записок в строке «Источник».
+SOURCE_RULE_TEXT = (
+    "\n- В «Источнике» — документ и пункт, где написано именно то, что сказано в ответе. Не бери источник из примеров "
+    "и не подставляй соседний по теме документ. Даты писем, записок и распоряжений в источнике не указывай; "
+    "редакцию регламента или положения указывай.")
+_SOURCE_DATE = re.compile(r"(Источник: (?:служебная записка|письмо|распоряжение)[^.]*?) от \d{2}\.\d{2}\.\d{4}")
+
+
+def _strip_source_dates(answer: str) -> str:
+    return _SOURCE_DATE.sub(r"\1", answer)
+
+
 FEW_SHOT_TEMPLATE_DEMO = [
     (FEW_SHOT_DEMO[0][0],
      "Арендная плата — 450 000 рублей в месяц, включая НДС; вносится ежемесячно, не позднее 5-го числа текущего месяца. "
@@ -176,6 +191,10 @@ if CONCISE:
     SYSTEM_PROMPT = SYSTEM_PROMPT.replace(_old_format, TEMPLATE_FORMAT if ANSWER_TEMPLATE else CONCISE_FORMAT)
     if ANSWER_TEMPLATE:   # B14: примеры — в том же формате и без лишнего
         FEW_SHOT = FEW_SHOT_TEMPLATE_FICTIONAL if FEWSHOT == "fictional" else FEW_SHOT_TEMPLATE_DEMO
+        if SOURCE_RULE:   # B14b
+            assert TEMPLATE_FORMAT in SYSTEM_PROMPT
+            SYSTEM_PROMPT = SYSTEM_PROMPT.replace(TEMPLATE_FORMAT, TEMPLATE_FORMAT + SOURCE_RULE_TEXT)
+            FEW_SHOT = [(q, _strip_source_dates(a)) for q, a in FEW_SHOT]
 
 
 def system_prompt() -> str:

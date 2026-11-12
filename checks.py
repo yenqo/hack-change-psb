@@ -228,6 +228,8 @@ def drop_sentences(answer: str, spans: list[str]) -> str:
     sents = SENT_SPLIT.split(answer)
     pats = [re.compile(r"(?<![\d.,])" + re.escape(sp) + r"(?![\d.,])", re.I) for sp in spans if sp]
     keep = [s for s in sents if not any(p.search(norm(s)) for p in pats)]
+    if not keep or all(_is_source(s) for s in keep):   # от ответа осталась бы одна строка «Источник: …»
+        return answer
     out = " ".join(keep).strip()
     return out if len(out.split()) >= 8 else answer
 
@@ -236,15 +238,29 @@ MD_RE = [(re.compile(r"\*\*|__|`"), ""), (re.compile(r"^#+\s*", re.M), ""),
          (re.compile(r"^\s*[-*•]\s+", re.M), ""), (re.compile(r"^\s*Ответ\s*:\s*", re.I), "")]
 
 
-_SOURCE_SENT = re.compile(r"Источник\s*:.*?[.!?»](?=\s+[А-ЯЁA-Z«(]|\s*$)", re.S)
+_SOURCE_START = re.compile(r"Источник\s*:", re.I)
+# конец предложения: точка (не после сокращения вроде «г.», «п.», «ст.») или ?/! перед заглавной буквой или в конце текста
+_SENT_END = re.compile(r"[.!?](?=\s+[А-ЯЁA-Z«(]|\s*$)")
+_ABBR_BEFORE = re.compile(r"(?:^|[\s(«№])(?:г|гг|п|пп|ч|ст|д|ул|обл|ред|им|т|руб|коп|см|др|прим|абз)$", re.I)
+
+
+def _is_source(sentence: str) -> bool:
+    return bool(_SOURCE_START.match(sentence.strip()))
 
 
 def trim_after_source(text: str) -> str:
-    """B14: всё после предложения «Источник: …» — лишнее; если его нет, текст не меняется."""
-    m = _SOURCE_SENT.search(text or "")
-    if not m or not text[m.end():].strip():
+    """B14: всё после предложения «Источник: …» — лишнее. Не трогает текст, если «Источник:» нет, если их несколько
+    (ответ по нескольким договорам) или если ответ с источника начинается."""
+    text = text or ""
+    starts = list(_SOURCE_START.finditer(text))
+    if len(starts) != 1 or not text[:starts[0].start()].strip():
         return text
-    return text[:m.end()].strip()
+    for m in _SENT_END.finditer(text, starts[0].end()):
+        if m.group(0) == "." and _ABBR_BEFORE.search(text[:m.start()]):
+            continue
+        end = m.end()
+        return text[:end].strip() if text[end:].strip() else text
+    return text
 
 
 def clean_answer(text: str) -> str:
@@ -485,5 +501,7 @@ def drop_ref_sentences(answer: str, spans: list[str]) -> str:
     """Удаляет предложения с неподтверждёнными ссылками (как drop_sentences для сроков, но по точному вхождению)."""
     sents = SENT_SPLIT.split(answer)
     keep = [s for s in sents if not any(sp and sp.lower() in s.lower() for sp in spans)]
+    if not keep or all(_is_source(s) for s in keep):
+        return answer
     out = " ".join(keep).strip()
     return out if len(out.split()) >= 8 else answer

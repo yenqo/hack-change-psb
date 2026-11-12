@@ -10,11 +10,11 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (ANSWER_TEMPLATE, CHECK_REFS, REWRITE_PROMPT, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (ANSWER_TEMPLATE, CHECK_REFS, CONCISE, REWRITE_PROMPT, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import STEMMER, STOPWORDS, WORD_RE, expand_query, norm
 from dates import date_conditions, date_note, event_periods
-from kb import cross_refs, doc_clauses, doc_ids, doc_markup, related_docs
+from kb import cross_refs, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
 from prompts import (REPAIR_REFS, SYSTEM_REWRITE, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message, rewrite_message,
@@ -74,6 +74,7 @@ class Prepared:
     rewrite_done: bool = False
     standalone: str | None = None
     extra: list | None = None      # [(поисковый запрос, его эмбеддинг или None)]
+    soft4xx_counted: bool = False  # B5: вопрос уже учтён в серии отказов (один раз на вопрос, не на каждую ступень)
 
 
 def _search(index: Index, query: str, prep: Prepared, kinds: set[str]) -> list[int]:
@@ -389,7 +390,9 @@ def _soft_4xx(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, exc:
         return answer_one(kb, index, qtext, prep, level, trace, info, _retry=True)
     f = runtime.FLAGS
     with f.lock:
-        f.soft4xx_streak += 1
+        if not prep.soft4xx_counted:   # ступени понижения одного вопроса — один вопрос в серии
+            prep.soft4xx_counted = True
+            f.soft4xx_streak += 1
         if f.soft4xx_streak >= 3:
             f.soft4xx_streak = 0
             if level >= 3:
@@ -517,7 +520,7 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
             runtime.FLAGS.inc("ref_trimmed")
             log(f"Удалены предложения с неподтверждёнными ссылками: {refs[:5]}")
             ans = trimmed
-    if ANSWER_TEMPLATE:   # B14: после «Источник: …» ничего
+    if ANSWER_TEMPLATE and CONCISE:   # B14 (формат подключается к промпту только вместе с B9)
         cut = trim_after_source(ans)
         if cut != ans:
             runtime.FLAGS.inc("template_trimmed")

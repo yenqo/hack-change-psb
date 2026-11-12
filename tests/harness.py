@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import importlib
 import importlib.util
-import json
 import math
 import os
 import struct
@@ -49,6 +48,7 @@ TEST_ENV = {
     "SOLUTION_REWRITE": "0",
     "SOLUTION_GENERAL_POINTS": "0",
     "SOLUTION_ANSWER_TEMPLATE": "0",
+    "SOLUTION_SOURCE_RULE": "0",
 }
 PLATFORM_VARS = ["LLM_BASE_URL", "BASE_URL", "OPENAI_BASE_URL", "LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDER_API_KEY",
                  "RERANKER_API_KEY", "LLM_MODEL", "GEN_MODEL", "OPENAI_MODEL", "EMB_MODEL", "RERANKER_MODEL",
@@ -67,7 +67,7 @@ OVERRIDABLE = {"SOLUTION_PREBUILT_INDEX", "SOLUTION_SOFT_DEGRADE", "SOLUTION_RER
                "SOLUTION_LEVEL_FORECAST", "SOLUTION_FINAL_PASS", "SOLUTION_CONCISE",
                "SOLUTION_DATE_CONDITIONS", "SOLUTION_CROSS_REFS",
                "SOLUTION_REWRITE", "SOLUTION_GENERAL_POINTS",
-               "SOLUTION_ANSWER_TEMPLATE"}
+               "SOLUTION_ANSWER_TEMPLATE", "SOLUTION_SOURCE_RULE"}
 
 
 def apply_env(extra: dict | None = None) -> None:

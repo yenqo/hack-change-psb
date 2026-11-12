@@ -456,3 +456,66 @@ class RewritePromptTest(unittest.TestCase):
 
     def test_search_only(self) -> None:
         self.assertEqual(self.run_case("0"), "2 True False")
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class B14FixesTest(unittest.TestCase):
+    """Пакет 1: обрезка источника, защита удаления предложений, связка B9/B14, B14b, счётчик B5."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.core = harness.load_core()
+
+    def test_trim_keeps_source(self) -> None:
+        t = self.core.trim_after_source
+        for a in ("Плата — 450 000 рублей. Источник: договор аренды № А-08/2024 с ООО «Северный Склад» (п. 3.1).",
+                  "Срок — 3 дня. Источник: письмо № К-12 от 15.04.2025 г. Москва, п. 2.",
+                  "Срок — 3 рабочих дня. Источник: Регламент в редакции от 01.03.2025, п. 3.2."):
+            self.assertEqual(t(a), a)
+        b = "Плата — 450 000 рублей. Источник: договор № А-08/2024, п. 3.1."
+        self.assertEqual(t(b + " Коммунальные платежи отдельно."), b)
+
+    def test_trim_leaves_multi_and_leading_source(self) -> None:
+        t = self.core.trim_after_source
+        multi = ("По П-17 — 30 дней. Источник: договор № П-17/2024, п. 4.2. По ПТ-05 — 45 дней. "
+                 "Источник: договор № ПТ-05/2023, п. 4.1. Уточните контрагента.")
+        self.assertEqual(t(multi), multi)
+        lead = "Источник: договор № А-08/2024, п. 3.1. Плата — 450 000 рублей."
+        self.assertEqual(t(lead), lead)
+
+    def test_drop_never_leaves_only_source(self) -> None:
+        a = ("Неустойка — 0,1% за каждый день, срок претензии 15 дней. "
+             "Источник: договор поставки № П-17/2024 с ООО «Альфа-Трейд», п. 7.1.")
+        self.assertEqual(self.core.drop_sentences(a, ["15 дней"]), a)
+        self.assertEqual(self.core.drop_ref_sentences(a, ["15 дней"]), a)
+
+    def test_template_trim_needs_concise(self) -> None:
+        src = (harness.ROOT / "pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("if ANSWER_TEMPLATE and CONCISE:", src)
+
+    def test_source_rule_prompt(self) -> None:
+        code = ("import prompts\n"
+                "print('Не бери источник из примеров' in prompts.SYSTEM_TEXT, "
+                "any('ЮО-7 от' in a for _, a in prompts.FEW_SHOT))")
+        env = {**harness.TEST_ENV, "SOLUTION_CONCISE": "1", "SOLUTION_ANSWER_TEMPLATE": "1"}
+        self.assertEqual(run_py(code, {**env, "SOLUTION_SOURCE_RULE": "1"}), "True False")
+        self.assertEqual(run_py(code, {**env, "SOLUTION_SOURCE_RULE": "0"}), "False True")
+
+    def test_soft4xx_counts_question_once(self) -> None:
+        code = ("import contextlib, io, runtime, kb, index, pipeline, llm\n"
+                "with contextlib.redirect_stderr(io.StringIO()):\n"
+                "    b = kb.build_kb(); i = index.Index(b)\n"
+                "def bad(messages, max_tokens=0, timeout=0.0):\n"
+                "    raise llm.APIError('400', status=400, detail='bad request')\n"
+                "pipeline.chat = bad\n"
+                "pipeline.time.sleep = lambda s: None\n"
+                "p = pipeline.Prepared('Какая арендная плата по договору с «Северным Складом»?', [])\n"
+                "with contextlib.redirect_stderr(io.StringIO()):\n"
+                "    try:\n"
+                "        pipeline.answer_one(b, i, p.current, p, 4)\n"
+                "    except Exception:\n"
+                "        pass\n"
+                "f = runtime.FLAGS\n"
+                "print(f.soft4xx_streak, f.compact, f.minimal, f.tiny)")
+        out = run_py(code, {**harness.TEST_ENV, "SOLUTION_SOFT_DEGRADE": "1"})
+        self.assertEqual(out, "1 False False False")   # один вопрос — один шаг серии, глобальный режим не понижен
