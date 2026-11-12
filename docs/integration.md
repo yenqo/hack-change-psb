@@ -200,4 +200,27 @@ CORE_TARGET=root python -m unittest discover -s tests -p "test_contract.py"
 
 ## Docker и запуск веб-интерфейса
 
-Заполняет веб-разработчик. Ядру в контейнере нужны: файлы корня репозитория (`*.py`), `data/knowledge-base.zip` (или `DATA_DIR`), `httpx==0.28.1` и переменные окружения из таблицы выше.
+Веб-интерфейс — `web/server.py` (FastAPI) и `web/frontend/` (React); подробно — [web/README.md](../web/README.md).
+
+```bash
+docker compose up --build            # веб + эмбеддинги bge-m3 (llama.cpp), http://localhost:8000
+docker compose up --build --no-deps web   # без эмбеддингов: поиск по законам только BM25
+```
+
+Как веб использует фасад:
+
+- **Один `LegalAssistant` на процесс**, `warmup()` — в фоновом потоке при старте; пока идёт прогрев, `/api/health`
+  отдаёт `state: warming`, а чат — 503.
+- **`answer(messages, on_stage)`** вызывается в пуле потоков (`run_in_threadpool`); этапы из колбэка передаются в
+  event loop через `call_soon_threadsafe` и уходят в браузер потоком SSE, затем — `Result.to_dict()` целиком.
+- **`list_documents()` / `get_document()`** — каталог «Базы знаний» и просмотр документа с подсветкой
+  `citations[].start/end`, `context.documents[].search_hits/fragments`, `edition_notes`, `removed_instructions`.
+- **`answer_timeout`** — 150 с (`WEB_ANSWER_TIMEOUT`).
+- **Маршрутизация моделей.** Ядро ходит во все модели по одному `LLM_BASE_URL`. Если задан `EMB_BASE_URL`, веб передаёт
+  ядру в `overrides` свой адрес `http://127.0.0.1:<WEB_PORT>/internal/llm/v1` с одноразовым ключом: генерация уходит
+  к провайдеру с настоящим ключом, эмбеддинги — на `EMB_BASE_URL`, реранкер — на `RERANK_BASE_URL` или 404.
+  Перед `warmup()` веб ждёт готовности сервера эмбеддингов (`EMB_WAIT_SECONDS`); если его нет — отвечает ядру 404
+  на `/embeddings`, и ядро сразу работает на BM25.
+
+В образ (`Dockerfile`) входят корневые `*.py`, `index_vectors.json`, `data/knowledge-base.zip`,
+`data/demo_questions.csv`, `web/server.py` и собранный фронт; зависимости — `requirements.txt` и `web/requirements.txt`.

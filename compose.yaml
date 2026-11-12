@@ -1,0 +1,56 @@
+# Запуск всех компонентов одной командой:
+#   docker compose up --build
+# Открыть: http://localhost:8000
+#
+# Лёгкий режим без эмбеддингов (поиск по законам только BM25, без скачивания модели ~0,6 ГБ):
+#   docker compose up --build --no-deps web
+#
+# Ключ провайдера генерации (DeepSeek V4.1 Flash) — в файле .env рядом с этим файлом:
+#   LLM_BASE_URL, LLM_API_KEY, LLM_MODEL  (шаблон — .env.example)
+
+services:
+  # Веб-интерфейс: FastAPI + ядро ассистента + собранный фронт
+  web:
+    build: .
+    image: psb-legal-assistant-web
+    ports:
+      - "${WEB_HOST_PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Эмбеддинги — из сервиса emb ниже (перекрывает значение из .env для локального запуска)
+      EMB_BASE_URL: http://emb:8080/v1
+      DATA_DIR: /app/data
+    depends_on:
+      - emb # веб сам дождётся готовности эмбеддингов при прогреве (EMB_WAIT_SECONDS)
+    restart: unless-stopped
+
+  # Эмбеддинги bge-m3 (llama.cpp). Модель скачивается с Hugging Face при первом запуске и хранится в томе.
+  emb:
+    # llama.cpp server b12316, закреплён по дайджесту — проверенная версия (multi-arch: amd64 и arm64)
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:2103d1f4f2e2e223ad80587dcb39fc15a9f912f29ae1fa9fc1193fe8c1aea82f
+    command:
+      - -hf
+      - gpustack/bge-m3-GGUF:Q8_0
+      - --embedding
+      - --pooling
+      - cls
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - -c
+      - "8192"
+      - -b
+      - "8192"
+      - -ub
+      - "8192"
+    environment:
+      LLAMA_CACHE: /models
+    volumes:
+      - emb-models:/models
+    restart: unless-stopped
+
+volumes:
+  emb-models:
