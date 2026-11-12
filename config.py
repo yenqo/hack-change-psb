@@ -76,7 +76,7 @@ PROBE_RERANK = env("SOLUTION_PROBE_RERANK", "") == "1"
 
 # Доработки, ждущие замера на golden set (eval/experiments.md, «Отложенная валидация»). По умолчанию выключены:
 # поведение строго как у v1.3.
-FEWSHOT = env("SOLUTION_FEWSHOT", "demo")              # 7.6: demo — примеры из демо-вопросов; fictional — вымышленные
+FEWSHOT = env("SOLUTION_FEWSHOT", "fictional")         # 7.6 (принято): fictional — вымышленные примеры; demo — из демо-вопросов
 FIX_DOCNUM = env("SOLUTION_FIX_DOCNUM", "") == "1"     # B3: номера документов не проверяются как числа
 CHECK_REFS = env("SOLUTION_CHECK_REFS", "") == "1"     # 7.1: проверка номеров пунктов и документов в ответе
 DATE_CONDITIONS = env("SOLUTION_DATE_CONDITIONS", "") == "1"   # R4: справка по датам с условиями и редакциями законов
