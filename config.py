@@ -81,7 +81,7 @@ FIX_DOCNUM = env("SOLUTION_FIX_DOCNUM", "") == "1"     # B3: номера док
 CHECK_REFS = env("SOLUTION_CHECK_REFS", "") == "1"     # 7.1: проверка номеров пунктов и документов в ответе
 DATE_CONDITIONS = env("SOLUTION_DATE_CONDITIONS", "") == "1"   # R4: справка по датам с условиями и редакциями законов
 CROSS_REFS = env("SOLUTION_CROSS_REFS", "") == "1"             # R6: фрагменты законов, на которые ссылаются найденные
-GENERAL_POINTS = env("SOLUTION_GENERAL_POINTS", "") == "1"     # B12: общие пункты больших статей — вне урезанного бюджета
+GENERAL_POINTS = env("SOLUTION_GENERAL_POINTS", "1") != "0"    # B12 (принято): общие пункты больших статей — вне урезанного бюджета
 REWRITE = env("SOLUTION_REWRITE", "1") != "0"                  # R7 (принято): переформулирование запроса (диалог / слабый поиск)
 REWRITE_COS = 0.58     # R7: поиск «слабый», если лучший косинус и по законам, и по документам компании ниже порога
 REWRITE_BM25 = 10.0    # R7: то же без эмбеддингов — по лучшему BM25

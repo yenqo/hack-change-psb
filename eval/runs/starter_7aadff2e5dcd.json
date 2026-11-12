@@ -1,0 +1,58 @@
+{
+ "label": "starter_7aadff2e5dcd",
+ "target": "starter",
+ "golden": "7aadff2e5dcd",
+ "ts": "2026-11-12 13:24:22",
+ "commit": "8fe2386",
+ "elapsed": 43.9,
+ "tokens": 2868,
+ "proxy_stats": {
+  "chat": 3,
+  "chat_cached": 0,
+  "chat_err": 0,
+  "emb_texts": 15,
+  "emb_cached": 12,
+  "emb_err": 0,
+  "rerank": 3
+ },
+ "proxy_errors": {},
+ "untagged_calls": 0,
+ "answers": {
+  "g48": "В договоре указана ставка НДС 20%, но фрагмент не сообщает, какую ставку применять в 2026 году. По нему нельзя установить, изменилась ли ставка к этому времени; для ответа нужны актуальные сведения о применимой ставке и условиях договора.",
+  "B12-1": "По представленным фрагментам к поставкам мебели применяется НДС **20%**: пункт 2.1 договора прямо указывает, что цена включает НДС по ставке 20%. Дополнительное соглашение № 1 изменяет только адрес доставки и не меняет ставку НДС. Данных о последующем изменении ставки в приложенных документах нет.",
+  "B12-2": "В приложенных фрагментах ставка НДС не указана. Статья 284 НК РФ регулирует ставки налога на прибыль, а не НДС. Поэтому по этим материалам определить ставку НДС невозможно."
+ },
+ "per_q": {
+  "g48": {
+   "calls": 1,
+   "chat_sec": 9.271,
+   "prompt_tokens": 856,
+   "completion_tokens": 61,
+   "cached_tokens": 0
+  },
+  "B12-1": {
+   "calls": 1,
+   "chat_sec": 41.783,
+   "prompt_tokens": 790,
+   "completion_tokens": 174,
+   "cached_tokens": 0
+  },
+  "B12-2": {
+   "calls": 1,
+   "chat_sec": 16.322,
+   "prompt_tokens": 856,
+   "completion_tokens": 131,
+   "cached_tokens": 0
+  }
+ },
+ "debug": {},
+ "log_tail": "Reranker недоступен: HTTPStatusError; используем текущий порядок\nReranker недоступен: HTTPStatusError; используем текущий порядок\nReranker недоступен: HTTPStatusError; используем текущий порядок",
+ "env": {
+  "LLM_MODEL": "deepseek-v4.1-flash",
+  "EMB_MODEL": "baai/bge-m3",
+  "RERANKER_MODEL": "qwen/qwen3-reranker-8b",
+  "TEMPERATURE": "0",
+  "MAX_TOKENS": null,
+  "MAX_WORKERS": "2"
+ }
+}
