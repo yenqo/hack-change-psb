@@ -48,6 +48,13 @@ class LegalAssistant:
         import kb as kbmod
         import pipeline
         import runtime
+        if config.MODE != "web":
+            # ядро уже загружено в пакетном режиме (его импортировали раньше фасада): без этого через 16,5 минуты
+            # после старта процесса общий дедлайн пакетного прогона истёк бы, и все ответы падали бы
+            for name in _CORE_MODULES + ("probe",):
+                mod = sys.modules.get(name)
+                if mod is not None and hasattr(mod, "MODE"):
+                    mod.MODE = "web"
         self._config, self._kbmod, self._pipeline, self._runtime = config, kbmod, pipeline, runtime
         self.answer_timeout = float(answer_timeout)
         self.degrade_recheck = float(degrade_recheck)
@@ -122,11 +129,12 @@ class LegalAssistant:
                 return self._error("kb_unavailable", f"База знаний не загружена: {self._warm_error or 'нет документов'}",
                                    t0)
             self._recheck_degradation()
-            fut = self._pool.submit(P.answer, self._kb, self._index, question_text, 4, on_stage, self.debug, self._ids)
+            fut = self._pool.submit(self._answer_with_deadline, question_text, on_stage)
             try:
                 res = fut.result(timeout=self.answer_timeout)
             except FutureTimeout:
-                # Ответ дорабатывает в фоне и будет отброшен; пользователю — понятная ошибка сразу.
+                # Ещё не начатая задача отменяется; начатая упирается в дедлайн запроса и скоро освобождает поток.
+                fut.cancel()
                 self._llm_ok = False
                 return self._error("timeout", f"Ответ не получен за {self.answer_timeout:.0f} с", t0)
             if res.status != "error":
@@ -137,6 +145,14 @@ class LegalAssistant:
             return res
         except Exception as exc:  # noqa: BLE001 — исключения наружу не выпускаем
             return self._error("internal_error", type(exc).__name__, t0)
+
+    def _answer_with_deadline(self, question_text: str, on_stage):
+        """Рабочий поток: ожидание модели, повторы и тайм-ауты HTTP ограничены временем ответа (+ запас 2 с)."""
+        self._config.set_request_deadline(self.answer_timeout + 2.0)
+        try:
+            return self._pipeline.answer(self._kb, self._index, question_text, 4, on_stage, self.debug, self._ids)
+        finally:
+            self._config.set_request_deadline(None)
 
     def _error(self, code: str, message: str, t0: float):
         res = self._pipeline.Result(text="Не удалось сформировать ответ по базе знаний. Попробуйте ещё раз позже.",

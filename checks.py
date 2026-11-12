@@ -401,13 +401,10 @@ def _applies(d: Doc, periods: list) -> bool | None:
     return all(vf <= end and start <= vt for start, end, _ in periods)
 
 
-_KB_CLAUSES: dict[int, list] = {}
-
-
 def kb_clauses(d: Doc) -> list[dict]:
-    if id(d) not in _KB_CLAUSES:
-        _KB_CLAUSES[id(d)] = doc_clauses(d)
-    return _KB_CLAUSES[id(d)]
+    if getattr(d, "_clauses", None) is None:   # кэш на самом документе, а не по id()
+        d._clauses = doc_clauses(d)
+    return d._clauses
 
 
 # ---------------------------------------------------------------------------
@@ -419,14 +416,13 @@ _CODE_RE = re.compile(r"№\s*([A-Za-zА-ЯЁа-яё0-9][\w\-/.]*\d[\w\-/]*)|(?<
 _ART_REF = re.compile(r"(ТК|НК|КоАП)\s*РФ\W{0,3}(?:ст\.|стать\w*)\s*(\d+(?:\.\d+)?)|"
                       r"(?:ст\.|стать\w*)\s*(\d+(?:\.\d+)?)\s*(?:,\s*ч\.\s*\d+\s*)?(ТК|НК|КоАП)\s*РФ", re.I)
 _OTHER_ART = re.compile(r"^\s*(?:,\s*)?(?:(?:ч|п)\.\s*\d+(?:[\s,–-]+\d+)*\s*)?(?:ст\.|стать\w*)\s*(\d+(?:\.\d+)?)", re.I)
-_KB_NORM: dict[int, str] = {}
 
 
 def _kb_norm(kb: KB) -> str:
     """Весь текст базы в нижнем регистре, «/» → «-» — для поиска номеров документов."""
-    if id(kb) not in _KB_NORM:
-        _KB_NORM[id(kb)] = "\n".join(d.text for d in kb.docs).lower().replace("ё", "е").replace("/", "-")
-    return _KB_NORM[id(kb)]
+    if getattr(kb, "_norm_text", None) is None:   # кэш на самой базе, а не по id()
+        kb._norm_text = "\n".join(d.text for d in kb.docs).lower().replace("ё", "е").replace("/", "-")
+    return kb._norm_text
 
 
 def _article_known(kb: KB, num: str) -> bool:

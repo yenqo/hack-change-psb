@@ -793,7 +793,6 @@ _XR_TOKEN = re.compile(rf"(подпункт|пункт|част|стать|аб�
                        re.I)
 _XR_GAP = re.compile(r"^[\s,]*(?:(?:и|или|либо)\s+)?$")
 _XR_LEVEL = {"абзац": 0, "подпункт": 1, "пункт": 2, "част": 3, "стать": 4}
-_XR_CACHE: dict[int, dict[int, list[dict]]] = {}
 
 
 def _xr_nums(raw: str) -> list[str]:
@@ -842,9 +841,9 @@ def cross_refs(kb: KB) -> dict[int, list[dict]]:
     """Отсылки в пунктах законов (вычисляется один раз на базу): фрагмент → [{"text", "targets": [idx фрагментов],
     "absent": [(акт, статья)]}]. Цель — фрагменты пункта/подпункта; пункт из нескольких больших фрагментов и ссылка
     на статью целиком без пункта не раскрываются (слишком широко). Документы компании не разбираются (видны целиком)."""
-    key = id(kb)
-    if key in _XR_CACHE:
-        return _XR_CACHE[key]
+    cached = getattr(kb, "_cross_refs", None)   # кэш на самой базе: id() после сборки мусора может достаться другой
+    if cached is not None:
+        return cached
     act_of = {d.idx: d.label.split(", ст. ")[0] for d in kb.laws}
     art_of = {d.idx: (d.label.split(", ст. ")[1] if ", ст. " in d.label else "") for d in kb.laws}
     by_art = {(act_of[i], art_of[i]): i for i in act_of if art_of[i]}
@@ -913,5 +912,5 @@ def cross_refs(kb: KB) -> dict[int, list[dict]]:
             if refs_t or absent:
                 out.setdefault(c.idx, []).append({"text": (segment.strip() + " " + a.group(0))[-200:],
                                                   "targets": refs_t, "absent": absent})
-    _XR_CACHE[key] = out
+    kb._cross_refs = out
     return out

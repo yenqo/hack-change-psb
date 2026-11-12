@@ -127,3 +127,17 @@ def remaining() -> float:
     if MODE == "web":
         return 3600.0
     return DEADLINE - time.monotonic()
+
+
+# Дедлайн одного веб-запроса (ставит фасад в рабочем потоке): ожидание модели, повторы и тайм-ауты HTTP не выходят за
+# него, поэтому поток освобождается вскоре после тайм-аута фасада. Вне фасада — бесконечность (пакетный режим как был).
+_REQUEST = threading.local()
+
+
+def set_request_deadline(seconds: float | None) -> None:
+    _REQUEST.deadline = None if seconds is None else time.monotonic() + seconds
+
+
+def request_remaining() -> float:
+    deadline = getattr(_REQUEST, "deadline", None)
+    return float("inf") if deadline is None else deadline - time.monotonic()
