@@ -10,7 +10,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (ANSWER_TEMPLATE, CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import STEMMER, STOPWORDS, WORD_RE, expand_query, norm
 from dates import date_conditions, date_note, event_periods
@@ -20,7 +20,7 @@ from llm import APIError, chat, embed, rerank
 from prompts import (REPAIR_REFS, SYSTEM_REWRITE, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message, rewrite_message,
                      repair_refs_message)
 from checks import (_CLAUSE_REF, _applies, _clause_key, _expand_nums, _mentions, _quote_span, clean_answer,
-                    drop_ref_sentences, drop_sentences, kb_clauses, unverified, unverified_refs)
+                    drop_ref_sentences, drop_sentences, kb_clauses, trim_after_source, unverified, unverified_refs)
 
 if TYPE_CHECKING:
     from kb import Chunk, Doc, KB
@@ -517,6 +517,11 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
             runtime.FLAGS.inc("ref_trimmed")
             log(f"Удалены предложения с неподтверждёнными ссылками: {refs[:5]}")
             ans = trimmed
+    if ANSWER_TEMPLATE:   # B14: после «Источник: …» ничего
+        cut = trim_after_source(ans)
+        if cut != ans:
+            runtime.FLAGS.inc("template_trimmed")
+            ans = cut
     runtime.FLAGS.inc(f"level{level}")
     record = {"question": qtext, "current": prep.current, "level": level,
               "laws": [(kb.docs[d].label, "целиком" if chs is None else [c.label for c in chs]) for d, chs in law_items],

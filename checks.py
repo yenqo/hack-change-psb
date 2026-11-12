@@ -236,6 +236,17 @@ MD_RE = [(re.compile(r"\*\*|__|`"), ""), (re.compile(r"^#+\s*", re.M), ""),
          (re.compile(r"^\s*[-*•]\s+", re.M), ""), (re.compile(r"^\s*Ответ\s*:\s*", re.I), "")]
 
 
+_SOURCE_SENT = re.compile(r"Источник\s*:.*?[.!?»](?=\s+[А-ЯЁA-Z«(]|\s*$)", re.S)
+
+
+def trim_after_source(text: str) -> str:
+    """B14: всё после предложения «Источник: …» — лишнее; если его нет, текст не меняется."""
+    m = _SOURCE_SENT.search(text or "")
+    if not m or not text[m.end():].strip():
+        return text
+    return text[:m.end()].strip()
+
+
 def clean_answer(text: str) -> str:
     t = THINK_RE.sub("", text or "")
     for rx, rep in MD_RE:

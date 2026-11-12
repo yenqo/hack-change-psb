@@ -388,3 +388,41 @@ class GeneralPointsTest(unittest.TestCase):
         res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_GENERAL_POINTS": "1"})
         self.assertEqual(len(res["answers"]), 18)
         self.assertEqual(res["stats"]["level4"], 18)
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class AnswerTemplateTest(unittest.TestCase):
+    """B14: формат «… Источник: …», после источника ничего (SOLUTION_ANSWER_TEMPLATE)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.core = harness.load_core()
+
+    def test_trim(self) -> None:
+        t = self.core.trim_after_source
+        a = "Арендная плата — 450 000 рублей. Источник: договор аренды № А-08/2024, п. 3.1."
+        self.assertEqual(t(a + " Коммунальные платежи оплачиваются отдельно (п. 3.3)."), a)
+        self.assertEqual(t(a), a)                                     # хвоста нет — без изменений
+        self.assertEqual(t("Да, нужно (п. 2.4)."), "Да, нужно (п. 2.4).")  # нет «Источник:» — без изменений
+        b = "Срок — 3 рабочих дня. Источник: Регламент в редакции от 01.03.2025, п. 3.2."
+        self.assertEqual(t(b + " Оригинал хранится 5 лет."), b)       # даты и «п. 3.2.» внутри источника не режут его
+        c = "Ставка — 22%. Источник: НК РФ, ст. 164, п. 3; договор № П-17/2024, п. 2.1."
+        self.assertEqual(t(c), c)
+
+    def test_prompt(self) -> None:
+        code = ("import prompts\n"
+                "print('После предложения «Источник» ничего не пиши' in prompts.SYSTEM_TEXT, "
+                "all(a.rstrip().endswith('.') and ('Источник:' in a or 'нет документов' in a) for _, a in prompts.FEW_SHOT), "
+                "'Коммунальные' in prompts.SYSTEM_TEXT)")
+        on = run_py(code, {**harness.TEST_ENV, "SOLUTION_CONCISE": "1", "SOLUTION_ANSWER_TEMPLATE": "1"})
+        self.assertEqual(on, "True True False")
+        off = run_py(code, {**harness.TEST_ENV, "SOLUTION_CONCISE": "1", "SOLUTION_ANSWER_TEMPLATE": "0"})
+        self.assertTrue(off.startswith("False"))
+        fic = run_py(code, {**harness.TEST_ENV, "SOLUTION_CONCISE": "1", "SOLUTION_ANSWER_TEMPLATE": "1",
+                            "SOLUTION_FEWSHOT": "fictional"})
+        self.assertEqual(fic, "True True False")
+
+    def test_run_with_flag(self) -> None:
+        res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_CONCISE": "1", "SOLUTION_ANSWER_TEMPLATE": "1"})
+        self.assertEqual(len(res["answers"]), 18)
+        self.assertEqual(res["stats"]["level4"], 18)
