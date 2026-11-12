@@ -127,6 +127,9 @@ class Core:
 
     def warmup(self) -> None:
         t0 = time.monotonic()
+        if not UPSTREAM_BASE or not UPSTREAM_KEY:
+            print("[web] ВНИМАНИЕ: не заданы LLM_BASE_URL или LLM_API_KEY — генерация ответов недоступна",
+                  file=sys.stderr, flush=True)
         if USE_ROUTER:
             wait_port(WEB_PORT)  # эмбеддинги базы идут через этот же сервер — ждём, пока он начнёт слушать
         if EMB_BASE:
@@ -183,7 +186,7 @@ http_client: httpx.AsyncClient | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global core, http_client
-    http_client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
+    http_client = httpx.AsyncClient(timeout=httpx.Timeout(max(120.0, ANSWER_TIMEOUT), connect=10.0))
     core = Core()
     # Прогрев (база, BM25, эмбеддинги) — в фоне: сервер и фронт доступны сразу.
     threading.Thread(target=core.warmup, name="core-warmup", daemon=True).start()
@@ -267,6 +270,13 @@ async def model_lamps(core_health: dict | None) -> list[dict]:
     else:
         rr = lamp("rerank", "Reranker", "green", "Реранкер подключён")
     return [llm, emb, rr]
+
+
+@app.get("/api/ready")
+def ready() -> dict:
+    """Readiness-проба для Docker HEALTHCHECK: 200 только когда база загружена и ядро готово к запросам."""
+    c = require_ready()
+    return {"status": c.state, "warm_seconds": c.warm_seconds}
 
 
 @app.get("/api/health")

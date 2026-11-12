@@ -19,11 +19,19 @@ services:
       - path: .env
         required: false
     environment:
+      # Фиксируем порт внутри контейнера, чтобы локальный WEB_PORT из .env не ломал внутренний роутер
+      WEB_PORT: "8000"
       # Эмбеддинги — из сервиса emb ниже (перекрывает значение из .env для локального запуска)
       EMB_BASE_URL: http://emb:8080/v1
       DATA_DIR: /app/data
     depends_on:
       - emb # веб сам дождётся готовности эмбеддингов при прогреве (EMB_WAIT_SECONDS)
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    stop_grace_period: 10s
     restart: unless-stopped
 
   # Эмбеддинги bge-m3 (llama.cpp). Модель скачивается с Hugging Face при первом запуске и хранится в томе.
@@ -50,6 +58,9 @@ services:
       LLAMA_CACHE: /models
     volumes:
       - emb-models:/models
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
     restart: unless-stopped
 
 volumes:

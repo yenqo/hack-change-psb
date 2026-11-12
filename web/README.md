@@ -72,6 +72,7 @@ docker compose up --build
 | GET | `/api/documents/{doc_id}` | Документ целиком: текст, пункты, пометки редакций, вырезанные инструкции |
 | GET | `/api/examples` | Демо-вопросы (`data/demo_questions.csv`) для карточек-примеров |
 | GET | `/api/health` | Прогрев ядра (`warming` / `ready` / `error`) и состояние моделей для индикаторов |
+| GET | `/api/ready` | Readiness-проба (`200` после загрузки базы, `503` во время прогрева или ошибки — для Docker `HEALTHCHECK`) |
 
 Интерактивная документация — http://localhost:8000/docs.
 
