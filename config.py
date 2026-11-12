@@ -82,6 +82,7 @@ CHECK_REFS = env("SOLUTION_CHECK_REFS", "") == "1"     # 7.1: проверка �
 DATE_CONDITIONS = env("SOLUTION_DATE_CONDITIONS", "") == "1"   # R4: справка по датам с условиями и редакциями законов
 CROSS_REFS = env("SOLUTION_CROSS_REFS", "") == "1"             # R6: фрагменты законов, на которые ссылаются найденные
 ANSWER_TEMPLATE = env("SOLUTION_ANSWER_TEMPLATE", "1") != "0"  # B14 (принято): ответ «… Источник: …», после источника ничего
+CHUNK_FIXES = env("SOLUTION_CHUNK_FIXES", "") == "1"           # B19–B20: заголовок статьи — к первому пункту; продолжения с вводной фразой
 CHECK_FIXES = env("SOLUTION_CHECK_FIXES", "1") != "0"          # пакет 2 (принято): ложные срабатывания проверок, B1, синонимы, даты
 SOURCE_RULE = env("SOLUTION_SOURCE_RULE", "") == "1"           # B14b: источник — где написано именно то, что в ответе
 GENERAL_POINTS = env("SOLUTION_GENERAL_POINTS", "1") != "0"    # B12 (принято): общие пункты больших статей — вне урезанного бюджета

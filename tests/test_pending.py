@@ -549,3 +549,29 @@ class CheckFixesTest(unittest.TestCase):
                 "llm.post_json = lambda *a, **k: {'data': [{'index': 0}]}\n"
                 "try:\n    llm.embed(['x'])\nexcept llm.APIError as e:\n    print('APIError')\n")
         self.assertEqual(run_py(code, dict(harness.TEST_ENV)), "APIError")
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class ChunkFixesTest(unittest.TestCase):
+    """B19–B20 (SOLUTION_CHUNK_FIXES): нет фрагментов из одного заголовка; продолжения — с подпунктом и вводной фразой."""
+
+    CODE = ("import contextlib, io, json, kb\n"
+            "with contextlib.redirect_stderr(io.StringIO()):\n"
+            "    b = kb.build_kb()\n"
+            "law = [c for c in b.chunks if b.docs[c.doc].kind == 'law']\n"
+            "heads = sum(1 for c in law if kb.HEADING_RE.match(c.text.strip()) and '\\n' not in c.text.strip())\n"
+            "bare = sum(1 for c in law if c.text.startswith('(продолжение') and ':' not in c.text.split('\\n', 1)[0])\n"
+            "head_intro = sum(1 for c in law if c.text.startswith('(продолжение') and '«Статья' in c.text.split('\\n', 1)[0])\n"
+            "src = [d.text for d in b.docs]\n"
+            "offs = all(b.docs[c.doc].text[c.start:c.end].strip() for c in b.chunks if c.start >= 0)\n"
+            "print(json.dumps([len(b.chunks), heads, bare, head_intro, offs]))")
+
+    def test_on(self) -> None:
+        n, heads, bare, head_intro, offs = json.loads(run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_CHUNK_FIXES": "1"}))
+        self.assertEqual((heads, bare, head_intro, offs), (0, 0, 0, True))
+        self.assertEqual(n, 328)
+
+    def test_off_is_v13(self) -> None:
+        n, heads, bare, _, _ = json.loads(run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_CHUNK_FIXES": "0"}))
+        self.assertEqual((n, heads), (336, 8))
+        self.assertGreater(bare, 0)
