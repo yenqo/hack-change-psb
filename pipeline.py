@@ -10,7 +10,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (ANSWER_TEMPLATE, CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (ANSWER_TEMPLATE, CHECK_REFS, REWRITE_PROMPT, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
 from textproc import STEMMER, STOPWORDS, WORD_RE, expand_query, norm
 from dates import date_conditions, date_note, event_periods
@@ -436,7 +436,7 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
         dnote = "\n".join(x for x in (dnote, extra) if x)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history,
                                   xref=sel.get("law_xref"), absent=sel.get("law_absent"),
-                                  standalone=prep.standalone if REWRITE else None)
+                                  standalone=prep.standalone if REWRITE and REWRITE_PROMPT else None)
     system = SYSTEM_TEXT if level >= 3 else (SYSTEM_TEXT_SHORT if level == 2 else SYSTEM_TEXT_MINI)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
     if trace:

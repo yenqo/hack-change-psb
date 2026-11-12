@@ -426,3 +426,33 @@ class AnswerTemplateTest(unittest.TestCase):
         res = golden_runner.run_subprocess("root", "normal", {"SOLUTION_CONCISE": "1", "SOLUTION_ANSWER_TEMPLATE": "1"})
         self.assertEqual(len(res["answers"]), 18)
         self.assertEqual(res["stats"]["level4"], 18)
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class RewritePromptTest(unittest.TestCase):
+    """R7b: SOLUTION_REWRITE_PROMPT=0 — переформулировка только для поиска, в сообщение модели не попадает."""
+
+    def run_case(self, show: str) -> str:
+        code = ("import json, contextlib, io, runtime, kb, index, pipeline\n"
+                "with contextlib.redirect_stderr(io.StringIO()):\n"
+                "    b = kb.build_kb(); i = index.Index(b)\n"
+                "sent = []\n"
+                "def fake(messages, max_tokens=0, timeout=0.0):\n"
+                "    sent.append(messages)\n"
+                "    if messages[0]['content'].startswith('Ты помогаешь поиску'):\n"
+                "        return json.dumps({'question': 'Какой максимальный срок испытания главного бухгалтера?', "
+                "'queries': ['срок испытания главного бухгалтера']}, ensure_ascii=False)\n"
+                "    return 'Не более шести месяцев. Источник: ТК РФ, ст. 70.'\n"
+                "pipeline.chat = fake\n"
+                "runtime.TIMING.add('chat_full', 5.0)\n"
+                "p = pipeline.Prepared('Испыталку ему скок?', [('user', 'У нас новый главбух.'), ('assistant', 'Чем помочь?')])\n"
+                "pipeline.answer_one(b, i, 'вопрос', p, 4)\n"
+                "user = sent[-1][1]['content']\n"
+                "print(len(sent), p.standalone is not None, 'ВОПРОС СВОИМИ СЛОВАМИ' in user)")
+        return run_py(code, {**harness.TEST_ENV, "SOLUTION_REWRITE": "1", "SOLUTION_REWRITE_PROMPT": show})
+
+    def test_shown_by_default(self) -> None:
+        self.assertEqual(self.run_case("1"), "2 True True")
+
+    def test_search_only(self) -> None:
+        self.assertEqual(self.run_case("0"), "2 True False")
