@@ -1,0 +1,11 @@
+{$SITE_ADDRESS::80} {
+	basic_auth {
+		{$CADDY_USER:jury} {$CADDY_PASS_HASH}
+	}
+
+	reverse_proxy web:8000 {
+		# Отключаем буферизацию, чтобы SSE-события /api/chat (search -> generate -> verify -> done)
+		# доходили до браузера сразу по мере выполнения этапов.
+		flush_interval -1
+	}
+}

@@ -161,7 +161,22 @@ Docker публикует порт на всех IPv4-адресах серве�
 ### 5. Безопасность
 
 В интерфейсе нет авторизации: любой, кто знает адрес, тратит токены вашего ключа. Для публичной ссылки ограничьте
-доступ по IP в фаерволе облака или поставьте перед приложением обратный прокси с паролем и HTTPS (например, Caddy).
+доступ по IP в фаерволе облака или поднимите готовый прокси Caddy из [`compose.prod.yaml`](../compose.prod.yaml)
+с Basic Auth и HTTPS (в [`Caddyfile`](../Caddyfile) уже отключена буферизация для SSE):
+
+```bash
+docker run --rm caddy:2.8-alpine caddy hash-password --plaintext 'ВАШ_ПАРОЛЬ'
+# добавить в .env: WEB_BIND_IP=127.0.0.1, CADDY_USER=jury, CADDY_PASS_HASH='$2a$14$...'
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+```
+
+### Проверка контейнера
+
+```bash
+.venv/bin/python tools/smoke_web.py --url http://127.0.0.1:8000 --wait 180
+```
+
+Без Docker (проверка роутов, статики и SSE-контракта через FastAPI TestClient): `.venv/bin/python tools/smoke_web.py --inprocess`.
 
 ### Обновление
 

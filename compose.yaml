@@ -14,7 +14,7 @@ services:
     build: .
     image: psb-legal-assistant-web
     ports:
-      - "${WEB_HOST_PORT:-8000}:8000"
+      - "${WEB_BIND_IP:-0.0.0.0}:${WEB_HOST_PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false

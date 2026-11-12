@@ -1,0 +1,32 @@
+# Продакшн-профиль поверх compose.yaml: обратный прокси Caddy с Basic Auth (и HTTPS при домене).
+# Сгенерировать хеш пароля:
+#   docker run --rm caddy:2.8-alpine caddy hash-password --plaintext 'ВАШ_ПАРОЛЬ'
+# Добавить в .env:
+#   WEB_BIND_IP=127.0.0.1
+#   CADDY_USER=jury
+#   CADDY_PASS_HASH='$2a$14$...'
+#   SITE_ADDRESS=:80           # или доменное имя для автоматического HTTPS
+# Запуск:
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+
+services:
+  proxy:
+    image: caddy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      CADDY_USER: ${CADDY_USER:-jury}
+      CADDY_PASS_HASH: ${CADDY_PASS_HASH:?Укажите CADDY_PASS_HASH в .env (см. compose.prod.yaml)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
