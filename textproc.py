@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import threading
 
+from config import CHECK_FIXES
+
 
 class RussianStemmer:
     V = set("аеиоуыэюя")
@@ -183,5 +185,8 @@ SYNONYMS = {
 
 def expand_query(q: str) -> str:
     nq = norm(q)
-    extra = [v for k, v in SYNONYMS.items() if k in nq]
+    if CHECK_FIXES:   # пакет 2: «временн» не должно срабатывать в «своевременно», «одновременно»
+        extra = [v for k, v in SYNONYMS.items() if re.search(r"(?<![а-яёa-z])" + re.escape(k), nq)]
+    else:
+        extra = [v for k, v in SYNONYMS.items() if k in nq]
     return q + (" " + " ".join(extra) if extra else "")

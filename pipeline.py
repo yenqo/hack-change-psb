@@ -10,17 +10,17 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CHECK_REFS, CROSS_REFS, DATE_CONDITIONS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
+from config import (ANSWER_TEMPLATE, CHECK_FIXES, CHECK_REFS, CONCISE, REWRITE_PROMPT, CROSS_REFS, DATE_CONDITIONS, GENERAL_POINTS, MAX_WORKERS, MODE, REWRITE, REWRITE_BM25, REWRITE_COS, DEBUG, SOFT_DEGRADE, CANDIDATES, COMPANY_FULL_LIMIT, LAW_BUDGET_CHARS, LAW_TOP, SMALL_LAW_CHARS, debug_dump, log,
     remaining)
-from textproc import expand_query
+from textproc import STEMMER, STOPWORDS, WORD_RE, expand_query, norm
 from dates import date_conditions, date_note, event_periods
-from kb import cross_refs, doc_clauses, doc_ids, doc_markup, related_docs
+from kb import cross_refs, doc_ids, doc_markup, related_docs
 from runtime import per_question_budget
 from llm import APIError, chat, embed, rerank
 from prompts import (REPAIR_REFS, SYSTEM_REWRITE, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message, rewrite_message,
                      repair_refs_message)
 from checks import (_CLAUSE_REF, _applies, _clause_key, _expand_nums, _mentions, _quote_span, clean_answer,
-                    drop_ref_sentences, drop_sentences, kb_clauses, unverified, unverified_refs)
+                    drop_ref_sentences, drop_sentences, kb_clauses, trim_after_source, unverified, unverified_refs)
 
 if TYPE_CHECKING:
     from kb import Chunk, Doc, KB
@@ -74,6 +74,16 @@ class Prepared:
     rewrite_done: bool = False
     standalone: str | None = None
     extra: list | None = None      # [(поисковый запрос, его эмбеддинг или None)]
+    soft4xx_counted: bool = False  # B5: вопрос уже учтён в серии отказов (один раз на вопрос, не на каждую ступень)
+
+
+def _user_text(prep: Prepared) -> str:
+    """Реплики пользователя: история + текущий вопрос (без реплик ассистента)."""
+    return " ".join([t for r, t in prep.history if r == "user"] + [prep.current])
+
+
+def _event_text(qtext: str) -> str:
+    return _user_text(Prepared(*parse_dialog(qtext))) if CHECK_FIXES else qtext
 
 
 def _search(index: Index, query: str, prep: Prepared, kinds: set[str]) -> list[int]:
@@ -176,6 +186,8 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
         top3_law = any(kb.docs[kb.chunks[ci].doc].kind == "law" for ci, _ in allbm[:3])
         if best_comp > 0 and best_law < 0.6 * best_comp and not top3_law:
             budget = min(budget, 5000)
+    # B12: урезанный бюджет (вопрос о документах компании) не распространяется на общие пункты больших статей
+    gp_room = (budget_chars - budget) if GENERAL_POINTS else 0
     order = ranked
     if use_rerank:
         rr = rerank(prep.standalone or (prep.current if not prep.history else query[:2000]),
@@ -217,14 +229,20 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
             continue
         seen_docs.append(d)
         extra = 0
+        room = gp_room if gp_room and _topic_hit(kb.docs[d], query) else 0   # B12: только статья по теме вопроса
         for c in kb.chunks:
             if c.doc != d or c.label.count(",") != 2 or len(c.text) > 700 or "(продолжение" in c.text:
                 continue
-            if c in (items.get(d) or []) or len(c.text) > budget or extra + len(c.text) > 2500:
+            if c in (items.get(d) or []) or len(c.text) > budget + room or extra + len(c.text) > 2500:
                 continue
             items.setdefault(d, [])
             items[d].append(c)  # type: ignore[union-attr]
-            budget -= len(c.text)
+            if len(c.text) > budget:   # B12: недостающее — из запаса урезанного бюджета
+                room -= len(c.text) - budget
+                gp_room -= len(c.text) - budget
+                budget = 0
+            else:
+                budget -= len(c.text)
             extra += len(c.text)
             reasons[c.idx] = "general_point"
     xref: dict[int, str] = {}
@@ -242,6 +260,17 @@ def select_law(kb: KB, index: Index, prep: Prepared, use_rerank: bool, budget_ch
         if CROSS_REFS:
             diag.update(law_xref=xref, law_absent=absent)
     return law_items, order
+
+
+_TOPIC_GENERIC = {"налог", "налогов", "ставк", "глав", "кодекс", "стат", "закон", "федеральн", "российск", "федерац", "организац"}
+
+
+def _topic_hit(d: Doc, query: str) -> bool:
+    """B12: вопрос про тему статьи — есть общие основы слов с её названием (с темой главы НК), с учётом синонимов."""
+    title = norm((d.search_extra or d.title).split("«", 1)[-1])
+    stems = {STEMMER.stem(w) for w in WORD_RE.findall(title) if not w.isdigit() and len(w) > 2 and w not in STOPWORDS}
+    q = {STEMMER.stem(w) for w in WORD_RE.findall(norm(expand_query(query))) if len(w) > 2 and w not in STOPWORDS}
+    return bool((stems - _TOPIC_GENERIC) & q)
 
 
 XREF_MAX = 3          # фрагментов, добавленных по отсылкам
@@ -370,7 +399,9 @@ def _soft_4xx(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, exc:
         return answer_one(kb, index, qtext, prep, level, trace, info, _retry=True)
     f = runtime.FLAGS
     with f.lock:
-        f.soft4xx_streak += 1
+        if not prep.soft4xx_counted:   # ступени понижения одного вопроса — один вопрос в серии
+            prep.soft4xx_counted = True
+            f.soft4xx_streak += 1
         if f.soft4xx_streak >= 3:
             f.soft4xx_streak = 0
             if level >= 3:
@@ -411,13 +442,14 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
         maybe_rewrite(kb, index, prep, level, sel)
     law_items, _ = select_law(kb, index, prep, use_rerank=level >= 4, budget_chars=law_budget, diag=sel)
     comp = company_context(kb, index, prep, compact=level <= 2, minimal=level <= 1, diag=sel)
-    dnote = date_note(qtext, kb)
+    date_text = _user_text(prep) if CHECK_FIXES else qtext   # пакет 2: даты из реплик ассистента — не даты события
+    dnote = date_note(date_text, kb)
     if DATE_CONDITIONS:  # R4: условия документов-изменений и редакции законов в контексте
-        extra = date_conditions(qtext, kb, [(kb.docs[d], chs) for d, chs in law_items])
+        extra = date_conditions(date_text, kb, [(kb.docs[d], chs) for d, chs in law_items])
         dnote = "\n".join(x for x in (dnote, extra) if x)
     user_msg = build_user_message(kb, comp, law_items, dnote, prep.current, prep.history,
                                   xref=sel.get("law_xref"), absent=sel.get("law_absent"),
-                                  standalone=prep.standalone if REWRITE else None)
+                                  standalone=prep.standalone if REWRITE and REWRITE_PROMPT else None)
     system = SYSTEM_TEXT if level >= 3 else (SYSTEM_TEXT_SHORT if level == 2 else SYSTEM_TEXT_MINI)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user_msg}]
     if trace:
@@ -498,6 +530,11 @@ def answer_one(kb: KB, index: Index, qtext: str, prep: Prepared, level: int, tra
             runtime.FLAGS.inc("ref_trimmed")
             log(f"Удалены предложения с неподтверждёнными ссылками: {refs[:5]}")
             ans = trimmed
+    if ANSWER_TEMPLATE and CONCISE:   # B14 (формат подключается к промпту только вместе с B9)
+        cut = trim_after_source(ans)
+        if cut != ans:
+            runtime.FLAGS.inc("template_trimmed")
+            ans = cut
     runtime.FLAGS.inc(f"level{level}")
     record = {"question": qtext, "current": prep.current, "level": level,
               "laws": [(kb.docs[d].label, "целиком" if chs is None else [c.label for c in chs]) for d, chs in law_items],
@@ -542,7 +579,7 @@ class Result:
 def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> list[dict]:
     """Ссылки ответа «документ + пункт» → цитаты со смещениями в тексте документа (get_document)."""
     mentions = _mentions(kb, text, qtext)
-    periods = event_periods(qtext)
+    periods = event_periods(_event_text(qtext))
     cites: dict[tuple[int, str | None], dict] = {}
 
     def add(d: Doc, clause: str | None) -> None:
@@ -642,7 +679,7 @@ def build_warnings(kb: KB, qtext: str, info: dict, citations: list[dict], ids: d
             out.append({"code": "removed_instructions", "doc_id": ids[di],
                         "message": f"В документе «{d.label}» удалена встроенная инструкция для ИИ: она не является "
                                    "положением документа и не учитывалась"})
-    if event_periods(qtext):
+    if event_periods(_event_text(qtext)):
         for di in sorted(cited):
             d = kb.docs[di]
             if d.kind == "law":
@@ -673,7 +710,7 @@ def build_context(kb: KB, index: Index, info: dict, prep: Prepared, qtext: str, 
                   citations: list[dict]) -> dict:
     """Что ушло в контекст модели — из тех же объектов, из которых строилось сообщение (info из answer_one).
     Только идентификаторы и смещения в тексте get_document; тексты не передаются."""
-    periods = event_periods(qtext)
+    periods = event_periods(_event_text(qtext))
     cited = {c["doc_id"] for c in citations}
     order = info.get("law_order") or []
     rank = {ci: i + 1 for i, ci in enumerate(order)}

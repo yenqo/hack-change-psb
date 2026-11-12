@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from config import CHUNK_MAX, DATA_DIR, log
+from config import CHUNK_FIXES, CHUNK_MAX, DATA_DIR, log
 from textproc import CODE_RE, STEMMER, STOPWORDS, WORD_RE, norm, tokenize
 from dates import DATE_NUM, DMY_TEXT, fmt_date, mkdate, month_no
 
@@ -449,7 +449,8 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
     merged: list[dict] = []  # единица только из заголовка статьи присоединяется к следующей
     for u in units:
         if merged and len(merged[-1]["lines"]) == 1 and not merged[-1]["notes"] \
-                and HEADING_RE.match(merged[-1]["lines"][0]) and merged[-1]["point"] == u["point"]:
+                and HEADING_RE.match(merged[-1]["lines"][0]) \
+                and (merged[-1]["point"] == u["point"] or (CHUNK_FIXES and merged[-1]["point"] is None)):  # B19
             u = {**u, "lines": merged[-1]["lines"] + u["lines"]}
             merged[-1] = u
         else:
@@ -483,6 +484,8 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
             add(plabel, full)
             continue
         intro = us[0]["lines"][0]
+        if CHUNK_FIXES:   # B19: первая строка может быть приклеенным заголовком статьи — вводная фраза идёт после него
+            intro = next((ln for ln in us[0]["lines"] if not HEADING_RE.match(ln)), intro)
         intro_short = intro if len(intro) <= 220 else intro[:220] + "…"
         buf: list[dict] = []
         size = 0
@@ -497,7 +500,10 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
                 text = f"(продолжение {word} {point}: «{intro_short}»)\n" + text
             for i, piece in enumerate(split_long(text, CHUNK_MAX)):
                 if i and point:
-                    piece = f"(продолжение {word} {point})\n" + piece
+                    if CHUNK_FIXES:   # B20: часть длинного подпункта понятна без начала — номер подпункта и вводная фраза
+                        piece = f"(продолжение {word} {point}{lab[len(plabel):]}: «{intro_short}»)\n" + piece
+                    else:
+                        piece = f"(продолжение {word} {point})\n" + piece
                 add(lab, piece)
 
         first = True

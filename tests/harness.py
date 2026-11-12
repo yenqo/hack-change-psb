@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import importlib
 import importlib.util
-import json
 import math
 import os
 import struct
@@ -47,6 +46,12 @@ TEST_ENV = {
     "SOLUTION_DATE_CONDITIONS": "0",
     "SOLUTION_CROSS_REFS": "0",
     "SOLUTION_REWRITE": "0",
+    "SOLUTION_GENERAL_POINTS": "0",
+    "SOLUTION_ANSWER_TEMPLATE": "0",
+    "SOLUTION_FEWSHOT": "demo",       # golden master — примеры v1.3
+    "SOLUTION_SOURCE_RULE": "0",
+    "SOLUTION_CHECK_FIXES": "0",
+    "SOLUTION_CHUNK_FIXES": "0",
 }
 PLATFORM_VARS = ["LLM_BASE_URL", "BASE_URL", "OPENAI_BASE_URL", "LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDER_API_KEY",
                  "RERANKER_API_KEY", "LLM_MODEL", "GEN_MODEL", "OPENAI_MODEL", "EMB_MODEL", "RERANKER_MODEL",
@@ -64,7 +69,9 @@ def target() -> str:
 OVERRIDABLE = {"SOLUTION_PREBUILT_INDEX", "SOLUTION_SOFT_DEGRADE", "SOLUTION_RERANK_RECHECK",
                "SOLUTION_LEVEL_FORECAST", "SOLUTION_FINAL_PASS", "SOLUTION_CONCISE",
                "SOLUTION_DATE_CONDITIONS", "SOLUTION_CROSS_REFS",
-               "SOLUTION_REWRITE"}
+               "SOLUTION_REWRITE", "SOLUTION_GENERAL_POINTS",
+               "SOLUTION_ANSWER_TEMPLATE", "SOLUTION_SOURCE_RULE", "SOLUTION_FEWSHOT",
+               "SOLUTION_CHECK_FIXES", "SOLUTION_CHUNK_FIXES"}
 
 
 def apply_env(extra: dict | None = None) -> None:

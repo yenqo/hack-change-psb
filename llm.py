@@ -207,11 +207,14 @@ def embed(texts: list[str]) -> list[list[float]]:
     if not isinstance(items, list) or len(items) != len(texts):
         raise APIError("неожиданный формат embeddings")
     out: list[list[float] | None] = [None] * len(texts)
-    for pos, it in enumerate(items):
-        i = int(it.get("index", pos))
-        v = [float(x) for x in it["embedding"]]
-        n = math.sqrt(sum(x * x for x in v)) or 1.0
-        out[i] = [x / n for x in v]
+    try:   # кривой ответ (нет поля, не числа, индекс вне диапазона) — как недоступные эмбеддинги: откат на BM25
+        for pos, it in enumerate(items):
+            i = int(it.get("index", pos))
+            v = [float(x) for x in it["embedding"]]
+            n = math.sqrt(sum(x * x for x in v)) or 1.0
+            out[i] = [x / n for x in v]
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+        raise APIError(f"неожиданный формат embeddings: {type(exc).__name__}") from exc
     if any(v is None for v in out):
         raise APIError("получены не все embeddings")
     return out  # type: ignore[return-value]
