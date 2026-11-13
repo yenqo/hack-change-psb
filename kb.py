@@ -35,6 +35,8 @@ class Doc:
     amendments: list = field(default_factory=list)   # R4: что документ меняет или дополняет — дата и условие
     body: str = ""             # для закона: текст статьи без служебной шапки, с пометками редакции
     search_extra: str = ""     # заголовок для поиска (с главой НК), если отличается от показываемого
+    act: str = ""              # для закона: акт («НК РФ», «ТК РФ», …) и номер статьи (пусто, если статьи нет)
+    article: str = ""
 
 
 @dataclass
@@ -47,6 +49,11 @@ class Chunk:
     search: str = ""
     start: int = -1            # смещения фрагмента в тексте документа (doc.text, его отдаёт get_document)
     end: int = -1
+    # Структура — в полях, чтобы не разбирать метку: clause — ссылка внутри документа («п. 3.1», «п. 1, пп. 2–4»),
+    # None — фрагмент без пункта; point — номер пункта (части) закона; sub — фрагмент из подпунктов пункта.
+    clause: str | None = None
+    point: str | None = None
+    sub: bool = False
 
 
 def decode_bytes(raw: bytes) -> str:
@@ -240,9 +247,10 @@ def company_chunks(doc: Doc, start_idx: int) -> list[Chunk]:
         if buf:
             body = "\n".join(buf)
             nums = re.findall(r"^(\d+(?:\.\d+)+)\.", body, re.M)
-            lab = doc.label + (f", п. {nums[0]}" + (f"–{nums[-1]}" if len(nums) > 1 else "") if nums else "")
+            clause = f"п. {nums[0]}" + (f"–{nums[-1]}" if len(nums) > 1 else "") if nums else None
+            lab = doc.label + (f", {clause}" if clause else "")
             text = (section + "\n" if section and not body.startswith(section) else "") + body
-            chunks.append(Chunk(start_idx + len(chunks), doc.idx, lab, text, order))
+            chunks.append(Chunk(start_idx + len(chunks), doc.idx, lab, text, order, clause=clause))
             order += 1
             buf = []
 
@@ -371,6 +379,16 @@ def split_long(text: str, limit: int) -> list[str]:
 
 
 def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
+    """Статья закона → фрагменты по пунктам (частям) и подпунктам; заполняет метку, название, тело и пометки."""
+    act, art_no, body = _law_header(doc)
+    base = doc.label
+    word = "п." if act.startswith("НК") else "ч."
+    units = _merge_heading(_law_units(doc, body))
+    return _law_chunks(doc, base, word, units, start_idx)
+
+
+def _law_header(doc: Doc) -> tuple[str, str, list[str]]:
+    """Служебная шапка выгрузки (источник, URL, дата) → (акт, номер статьи, строки тела); метка и название."""
     lines = doc.text.split("\n")
     source = ""
     body = []
@@ -398,14 +416,18 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
             break
     base = f"{act}, ст. {art_no}" if art_no else act
     doc.label = base
+    doc.act, doc.article = act, art_no
     doc.title = f"{base} «{art_title}»" if art_title else base
     topic = law_topic(act, art_no)
     if topic:  # номер главы в базе не встречается — модели показываем только название налога
         doc.search_extra = f"{doc.title} — {topic}"
         doc.title += f" — {topic.split(', глава')[0]}"
+    return act, art_no, body
 
+
+def _law_units(doc: Doc, body: list[str]) -> list[dict]:
+    """Единицы статьи: {point, sub, notes, lines}; пометки редакции до заголовка — в doc.art_notes."""
     numbered = sum(1 for s in body if POINT_RE.match(s)) >= 2
-    word = "п." if act.startswith("НК") else "ч."
 
     # Единицы: (номер пункта/части, номер подпункта, пометки, строки)
     units: list[dict] = []
@@ -445,7 +467,10 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
     if pending and units:
         units[-1]["lines"].extend(f"[Пометка редакции: {p}]" for p in pending)
     doc.body = "\n".join(body_out)
+    return units
 
+
+def _merge_heading(units: list[dict]) -> list[dict]:
     merged: list[dict] = []  # единица только из заголовка статьи присоединяется к следующей
     for u in units:
         if merged and len(merged[-1]["lines"]) == 1 and not merged[-1]["notes"] \
@@ -455,18 +480,24 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
             merged[-1] = u
         else:
             merged.append(u)
-    units = merged
+    return merged
 
-    def unit_text(u: dict) -> str:
-        notes = "".join(f"[Пометка редакции: {n}]\n" for n in u["notes"])
-        return notes + "\n".join(u["lines"])
 
+def _unit_text(u: dict) -> str:
+    notes = "".join(f"[Пометка редакции: {n}]\n" for n in u["notes"])
+    return notes + "\n".join(u["lines"])
+
+
+def _law_chunks(doc: Doc, base: str, word: str, units: list[dict], start_idx: int) -> list[Chunk]:
+    """Подряд идущие единицы одного пункта — один фрагмент; длинный пункт делится по подпунктам и по длине."""
     chunks: list[Chunk] = []
     order = 0
 
-    def add(label: str, text: str) -> None:
+    def add(label: str, text: str, point: str | None, sub: bool) -> None:
         nonlocal order
-        chunks.append(Chunk(start_idx + len(chunks), doc.idx, label, text.strip(), order))
+        clause = label[len(base) + 2:] if point else None   # метка = «база, п. X[, пп. Y]»
+        chunks.append(Chunk(start_idx + len(chunks), doc.idx, label, text.strip(), order,
+                            clause=clause, point=point, sub=sub))
         order += 1
 
     # Группируем подряд идущие единицы одного пункта
@@ -479,9 +510,9 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
 
     for point, us in groups:
         plabel = f"{base}, {word} {point}" if point else base
-        full = "\n".join(unit_text(u) for u in us)
+        full = "\n".join(_unit_text(u) for u in us)
         if len(full) <= CHUNK_MAX:
-            add(plabel, full)
+            add(plabel, full, point, False)
             continue
         intro = us[0]["lines"][0]
         if CHUNK_FIXES:   # B19: первая строка может быть приклеенным заголовком статьи — вводная фраза идёт после него
@@ -495,7 +526,7 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
                 return
             subs = [u["sub"] for u in buf if u["sub"]]
             lab = plabel + (f", пп. {subs[0]}" + (f"–{subs[-1]}" if len(subs) > 1 else "") if subs and point else "")
-            text = "\n".join(unit_text(u) for u in buf)
+            text = "\n".join(_unit_text(u) for u in buf)
             if not first and point:
                 text = f"(продолжение {word} {point}: «{intro_short}»)\n" + text
             for i, piece in enumerate(split_long(text, CHUNK_MAX)):
@@ -504,11 +535,11 @@ def parse_law(doc: Doc, start_idx: int) -> list[Chunk]:
                         piece = f"(продолжение {word} {point}{lab[len(plabel):]}: «{intro_short}»)\n" + piece
                     else:
                         piece = f"(продолжение {word} {point})\n" + piece
-                add(lab, piece)
+                add(lab, piece, point, bool(subs and point))
 
         first = True
         for u in us:
-            t = unit_text(u)
+            t = _unit_text(u)
             if buf and size + len(t) > CHUNK_MAX:
                 flush_buf(first)
                 first = False
@@ -808,11 +839,6 @@ def _xr_nums(raw: str) -> list[str]:
     return out
 
 
-def _xr_point(label: str) -> str | None:
-    m = re.search(r", (?:п|ч)\. ([\d.\-]+)", label)
-    return m.group(1) if m else None
-
-
 def _xr_groups(segment: str) -> list[dict]:
     """Цепочка «подпункт → пункт → часть → статья» непосредственно перед словом «настоящей/настоящего»."""
     toks = list(_XR_TOKEN.finditer(segment))
@@ -844,13 +870,13 @@ def cross_refs(kb: KB) -> dict[int, list[dict]]:
     cached = getattr(kb, "_cross_refs", None)   # кэш на самой базе: id() после сборки мусора может достаться другой
     if cached is not None:
         return cached
-    act_of = {d.idx: d.label.split(", ст. ")[0] for d in kb.laws}
-    art_of = {d.idx: (d.label.split(", ст. ")[1] if ", ст. " in d.label else "") for d in kb.laws}
+    act_of = {d.idx: d.act for d in kb.laws}
+    art_of = {d.idx: d.article for d in kb.laws}
     by_art = {(act_of[i], art_of[i]): i for i in act_of if art_of[i]}
     by_point: dict[tuple[int, str | None], list[Chunk]] = {}
     for c in kb.chunks:
         if c.doc in act_of:
-            by_point.setdefault((c.doc, _xr_point(c.label)), []).append(c)
+            by_point.setdefault((c.doc, c.point), []).append(c)
 
     def targets(di: int, point: str | None, sub: str | None) -> list[int]:
         chs = by_point.get((di, point), [])
@@ -867,7 +893,7 @@ def cross_refs(kb: KB) -> dict[int, list[dict]]:
     for c in kb.chunks:
         if c.doc not in act_of:
             continue
-        act, own_art, own_point = act_of[c.doc], art_of[c.doc], _xr_point(c.label)
+        act, own_art, own_point = act_of[c.doc], art_of[c.doc], c.point
         text = re.sub(r"\[Пометка редакции:[^\]]*\]", lambda m: " " * len(m.group(0)), c.text)
         prev = 0
         for a in _XR_ANCHOR.finditer(text):

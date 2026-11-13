@@ -23,11 +23,11 @@ class WebModeTest(unittest.TestCase):
     ENV = {**harness.TEST_ENV, "SOLUTION_PREBUILT_INDEX": "0", "SOLUTION_MODE": ""}
 
     def test_web_mode_forced_after_batch_import(self) -> None:
-        code = ("import config, pipeline\n"
+        code = ("import config, retrieval\n"
                 "before = config.MODE\n"
                 "from assistant import LegalAssistant\n"
                 "LegalAssistant()\n"
-                "print(before, config.MODE, pipeline.MODE, config.remaining() > 3000)")
+                "print(before, config.MODE, retrieval.MODE, config.remaining() > 3000)")
         self.assertEqual(run_py(code, self.ENV), "batch web web True")
 
     def test_chat_wait_respects_request_deadline(self) -> None:

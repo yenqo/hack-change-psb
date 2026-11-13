@@ -239,7 +239,9 @@ def run(which: str, scenario: str) -> dict:
             clock = simclock.SimClock()
             clock.install()
         else:
-            shutil.copy(harness.DATA / "demo_questions.csv", data / "questions.csv")
+            # GOLDEN_QUESTIONS — свой набор вопросов (tools/fingerprint.py); по умолчанию демо
+            shutil.copy(os.environ.get("GOLDEN_QUESTIONS") or harness.DATA / "demo_questions.csv",
+                        data / "questions.csv")
         shutil.copy(harness.DATA / "knowledge-base.zip", data / "knowledge-base.zip")
         harness.TEST_ENV["DATA_DIR"] = str(data)
         os.chdir(work)

@@ -17,7 +17,7 @@ from config import (API_BASE, DATA_DIR, EMB_MODEL, LLM_KEY, LLM_MODEL, MAX_TOKEN
     RERANKER_MODEL, T0, TEMPERATURE, TIME_BUDGET, env, log, remaining)
 from kb import find_kb, kb_hash
 from llm import APIError, _chat, post_json
-from pipeline import parse_dialog
+from dialog import parse_dialog
 
 
 def log_env() -> None:

@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import golden_runner
 import harness
@@ -296,15 +297,11 @@ class RewriteTest(unittest.TestCase):
                 {"question": "Какой максимальный срок испытания главного бухгалтера?",
                  "queries": ["срок испытания главного бухгалтера", "ТК РФ статья 70 испытание"]}, ensure_ascii=False)
 
-        harness.patch_everywhere(self.core, "chat", fake_chat)
         self.core.TIMING.add("chat_full", 5.0)   # переформулирование — только после первых замеров времени
-        try:
+        with mock.patch.object(sys.modules["retrieval"], "chat", fake_chat):
             prep = self.core.Prepared(current, history)
             info: dict = {}
             self.core.maybe_rewrite(self.kb, self.index, prep, level, info)
-        finally:
-            harness.patch_everywhere(self.core, "chat", self.core._modules[[m.__name__ for m in self.core._modules]
-                                                                            .index("llm")].chat)
         return prep, info, calls
 
     def test_dialog_fires_and_feeds_search(self) -> None:
@@ -375,11 +372,11 @@ class GeneralPointsTest(unittest.TestCase):
         self.assertTrue(hit(self.doc("КоАП РФ, ст. 13.11"), "Какой штраф за обработку персональных данных без согласия?"))
 
     def test_selection(self) -> None:
-        code = ("import contextlib, io, kb, index, pipeline\n"
+        code = ("import contextlib, io, kb, index, dialog, retrieval\n"
                 "with contextlib.redirect_stderr(io.StringIO()):\n"
                 "    b = kb.build_kb(); i = index.Index(b)\n"
-                "p = pipeline.Prepared('Какая ставка НДС применялась к поставкам мебели по договору с «Альфа-Трейд» в 2024 году?', [])\n"
-                "items, _ = pipeline.select_law(b, i, p, use_rerank=False)\n"
+                "p = dialog.Prepared('Какая ставка НДС применялась к поставкам мебели по договору с «Альфа-Трейд» в 2024 году?', [])\n"
+                "items, _ = retrieval.select_law(b, i, p, use_rerank=False)\n"
                 "print(any(c.label == 'НК РФ, ст. 164, п. 3' for _, cs in items if cs for c in cs))")
         base = {k: v for k, v in harness.TEST_ENV.items()}
         self.assertEqual(run_py(code, {**base, "SOLUTION_GENERAL_POINTS": "1"}), "True")
@@ -433,7 +430,7 @@ class RewritePromptTest(unittest.TestCase):
     """R7b: SOLUTION_REWRITE_PROMPT=0 — переформулировка только для поиска, в сообщение модели не попадает."""
 
     def run_case(self, show: str) -> str:
-        code = ("import json, contextlib, io, runtime, kb, index, pipeline\n"
+        code = ("import json, contextlib, io, runtime, kb, index, dialog, retrieval, answering\n"
                 "with contextlib.redirect_stderr(io.StringIO()):\n"
                 "    b = kb.build_kb(); i = index.Index(b)\n"
                 "sent = []\n"
@@ -443,10 +440,10 @@ class RewritePromptTest(unittest.TestCase):
                 "        return json.dumps({'question': 'Какой максимальный срок испытания главного бухгалтера?', "
                 "'queries': ['срок испытания главного бухгалтера']}, ensure_ascii=False)\n"
                 "    return 'Не более шести месяцев. Источник: ТК РФ, ст. 70.'\n"
-                "pipeline.chat = fake\n"
+                "retrieval.chat = answering.chat = fake\n"
                 "runtime.TIMING.add('chat_full', 5.0)\n"
-                "p = pipeline.Prepared('Испыталку ему скок?', [('user', 'У нас новый главбух.'), ('assistant', 'Чем помочь?')])\n"
-                "pipeline.answer_one(b, i, 'вопрос', p, 4)\n"
+                "p = dialog.Prepared('Испыталку ему скок?', [('user', 'У нас новый главбух.'), ('assistant', 'Чем помочь?')])\n"
+                "answering.answer_one(b, i, 'вопрос', p, 4)\n"
                 "user = sent[-1][1]['content']\n"
                 "print(len(sent), p.standalone is not None, 'ВОПРОС СВОИМИ СЛОВАМИ' in user)")
         return run_py(code, {**harness.TEST_ENV, "SOLUTION_REWRITE": "1", "SOLUTION_REWRITE_PROMPT": show})
@@ -490,7 +487,7 @@ class B14FixesTest(unittest.TestCase):
         self.assertEqual(self.core.drop_ref_sentences(a, ["15 дней"]), a)
 
     def test_template_trim_needs_concise(self) -> None:
-        src = (harness.ROOT / "pipeline.py").read_text(encoding="utf-8")
+        src = (harness.ROOT / "answering.py").read_text(encoding="utf-8")
         self.assertIn("if ANSWER_TEMPLATE and CONCISE:", src)
 
     def test_source_rule_prompt(self) -> None:
@@ -502,17 +499,17 @@ class B14FixesTest(unittest.TestCase):
         self.assertEqual(run_py(code, {**env, "SOLUTION_SOURCE_RULE": "0"}), "False True")
 
     def test_soft4xx_counts_question_once(self) -> None:
-        code = ("import contextlib, io, runtime, kb, index, pipeline, llm\n"
+        code = ("import contextlib, io, runtime, kb, index, dialog, answering, llm\n"
                 "with contextlib.redirect_stderr(io.StringIO()):\n"
                 "    b = kb.build_kb(); i = index.Index(b)\n"
                 "def bad(messages, max_tokens=0, timeout=0.0):\n"
                 "    raise llm.APIError('400', status=400, detail='bad request')\n"
-                "pipeline.chat = bad\n"
-                "pipeline.time.sleep = lambda s: None\n"
-                "p = pipeline.Prepared('Какая арендная плата по договору с «Северным Складом»?', [])\n"
+                "answering.chat = bad\n"
+                "answering.time.sleep = lambda s: None\n"
+                "p = dialog.Prepared('Какая арендная плата по договору с «Северным Складом»?', [])\n"
                 "with contextlib.redirect_stderr(io.StringIO()):\n"
                 "    try:\n"
-                "        pipeline.answer_one(b, i, p.current, p, 4)\n"
+                "        answering.answer_one(b, i, p.current, p, 4)\n"
                 "    except Exception:\n"
                 "        pass\n"
                 "f = runtime.FLAGS\n"
@@ -525,15 +522,15 @@ class B14FixesTest(unittest.TestCase):
 class CheckFixesTest(unittest.TestCase):
     """Пакет 2 (SOLUTION_CHECK_FIXES): ложные срабатывания проверки чисел, B1, синонимы, даты только пользователя."""
 
-    CODE = ("import json, checks, textproc, pipeline\n"
+    CODE = ("import json, checks, textproc, dialog\n"
             "ctx = 'Цена 2 000 000 рублей. Неустойка 0,1% за каждый день просрочки.'\n"
             "r = [checks.unverified(a, ctx, 'вопрос') for a in ('Стоимость — 2 050 рублей.', "
             "'Неустойка: 2 000 000 × 0,1% = 2 000 рублей за день.', 'Отвечать нужно за один день.')]\n"
             "a = 'Срок поставки — 10 дней. Договор действует, он подписан 31.12.2020. Источник: договор № П-17/2024, п. 3.1.'\n"
-            "p = pipeline.Prepared('А по договору 2024 года?', [('user', 'Вопрос'), ('assistant', 'Редакция от 01.03.2025.')])\n"
+            "p = dialog.Prepared('А по договору 2024 года?', [('user', 'Вопрос'), ('assistant', 'Редакция от 01.03.2025.')])\n"
             "print(json.dumps([[k for _, k in x] for x in r] + [checks.drop_sentences(a, ['31.12.2020']) != a, "
             "'срочный' in textproc.expand_query('Нужно своевременно оплатить счёт?'), "
-            "'01.03.2025' in pipeline._event_text('Пользователь: Вопрос\\nАссистент: Редакция от 01.03.2025.\\nПользователь: А по договору 2024 года?')], "
+            "'01.03.2025' in dialog.event_text('Пользователь: Вопрос\\nАссистент: Редакция от 01.03.2025.\\nПользователь: А по договору 2024 года?')], "
             "ensure_ascii=False))")
 
     def test_on(self) -> None:

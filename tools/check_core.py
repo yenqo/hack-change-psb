@@ -15,8 +15,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "index", "prompts", "checks", "pipeline", "probe",
-        "solution", "assistant"]
+CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+        "retrieval", "answering", "result", "pipeline",
+        "probe", "solution", "assistant"]
 ALLOWED_THIRD_PARTY = {"httpx"}
 STDLIB = set(getattr(sys, "stdlib_module_names", ())) or {
     "__future__", "argparse", "array", "base64", "builtins", "collections", "concurrent", "contextlib", "copy", "csv",

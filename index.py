@@ -18,11 +18,12 @@ import runtime
 from config import API_BASE, EMB_MODEL, env, log, remaining
 from textproc import expand_query, tokenize
 from kb import kb_hash
+from dialog import search_query
 from llm import APIError, embed
 
 if TYPE_CHECKING:
+    from dialog import Prepared
     from kb import KB
-    from pipeline import Prepared
 
 
 class Index:
@@ -175,20 +176,11 @@ class Index:
         return sorted(sc, key=lambda x: -x[1])
 
     def hybrid(self, query: str, qvec: list[float] | None, kinds: set[str]) -> list[int]:
-        allowed = {c.idx for c in self.kb.chunks if self.kb.docs[c.doc].kind in kinds}
-        lists = [[i for i, _ in self.bm25(expand_query(query)) if i in allowed][:80]]
-        d = [i for i, _ in self.dense(qvec) if i in allowed][:80]
-        if d:
-            lists.append(d)
-        rrf: dict[int, float] = {}
-        for lst in lists:
-            for r, i in enumerate(lst):
-                rrf[i] = rrf.get(i, 0.0) + 1.0 / (60 + r)
-        return [i for i, _ in sorted(rrf.items(), key=lambda x: -x[1])]
-
+        """Гибридный поиск: RRF по спискам BM25 и эмбеддингов (топ-80 каждого) среди фрагментов документов kinds."""
+        return self.hybrid_multi([(query, qvec)], kinds)
 
     def hybrid_multi(self, pairs: list[tuple[str, list[float] | None]], kinds: set[str]) -> list[int]:
-        """R7: RRF по спискам BM25 и эмбеддингов для нескольких запросов (исходный вопрос + переформулировки)."""
+        """То же для нескольких запросов (R7: исходный вопрос + переформулировки) — один RRF по всем спискам."""
         allowed = {c.idx for c in self.kb.chunks if self.kb.docs[c.doc].kind in kinds}
         lists = []
         for query, qvec in pairs:
@@ -204,7 +196,7 @@ class Index:
 
 
 def embed_questions(preps: list[Prepared], cap: float = 25.0) -> None:
-    qtexts = [(p.current + " " + " ".join(t for r, t in p.history if r == "user"))[:2000] for p in preps]
+    qtexts = [search_query(p)[:2000] for p in preps]
     batches = [list(range(i, min(i + 16, len(qtexts)))) for i in range(0, len(qtexts), 16)]
     out: list[list[float] | None] = [None] * len(qtexts)
 

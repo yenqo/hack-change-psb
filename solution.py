@@ -1,4 +1,4 @@
-"""ПСБ Hack&Change 2026 — юридический ассистент, версия v1.3 (сабмит 09.11.2026, 24,652).
+"""ПСБ Hack&Change 2026 — юридический ассистент (версии и баллы — CHANGELOG.md).
 
 Точка входа платформы: читает DATA_DIR/questions.csv и базу знаний, пишет submission.csv.
 Зависимости: стандартная библиотека Python + httpx.
@@ -9,8 +9,8 @@
   -> генерация (DeepSeek через прокси) -> проверка чисел кодом -> при необходимости одно исправление
   -> запасной экстрактивный ответ при любом сбое.
 
-Модули ядра лежат рядом (плоско в корне): config, textproc, dates, kb, runtime, llm, index,
-prompts, checks, pipeline, probe. Здесь — только пакетный прогон: вопросы → submission.csv.
+Модули ядра лежат рядом (плоско в корне): config, textproc, dates, kb, runtime, llm, index, prompts, checks,
+dialog, retrieval, answering, result, pipeline, probe. Здесь — только пакетный прогон: вопросы → submission.csv.
 """
 
 from __future__ import annotations
@@ -28,7 +28,9 @@ from config import API_BASE, FINAL_PASS, LLM_KEY, MAX_WORKERS, OUTPUT_FILE, PREB
 from kb import KB, build_kb, decode_bytes, find_questions
 from runtime import choose_level, question_cost
 from index import Index, embed_questions
-from pipeline import Prepared, answer_one, fallback_answer, parse_dialog
+from answering import answer_one
+from dialog import Prepared, parse_dialog
+from retrieval import fallback_answer
 from probe import log_env, platform_probe, run_stats, wait_for_llm
 
 
@@ -72,15 +74,7 @@ def main() -> None:
     questions = load_questions(find_questions())
     n = len(questions)
     log(f"Вопросов: {n}")
-    try:
-        kb = build_kb()
-        index = Index(kb)
-        answers = [fallback_answer(kb, index, q) for _, q in questions]
-    except Exception as exc:  # noqa: BLE001 — без базы всё равно отдаём корректный файл
-        log(f"База знаний не загружена: {type(exc).__name__}: {exc}")
-        kb = KB([], [])
-        index = Index(kb)
-        answers = ["В базе знаний не найдено документов по этому вопросу, поэтому ответить по документам нельзя."] * n
+    kb, index, answers = load_base(n, questions)
     write_submission(questions, answers)  # страховка: полный файл есть с первых секунд
     log("Записан предварительный submission.csv с запасными ответами")
 
@@ -92,22 +86,52 @@ def main() -> None:
 
     preps = [Prepared(*parse_dialog(q)) for _, q in questions]
     llm_ready = wait_for_llm()  # эмбеддинги строим после того, как прокси ответил
-    dense_sec = None
-    if kb.chunks:
-        t_dense = time.monotonic()
-        if not (PREBUILT_INDEX and index.load_prebuilt().get("used")):
-            index.build_dense(cap=60.0)
-        dense_sec = round(time.monotonic() - t_dense, 1)
-        if index.vecs is not None:
-            embed_questions(preps)
+    dense_sec = build_dense(kb, index, preps)
     platform_probe(kb, questions, index, llm_ready, dense_sec)
 
-    runtime.PROG.n = n
-    failed: list[int] = []
-    lock = threading.Lock()
-
     levels: list[int | None] = [None] * n   # уровень итогового ответа (None — запасной); для RUN STATS и B8
+    work = make_worker(kb, index, questions, preps, levels)
+    failed = first_pass(work, questions, answers)
+    rounds = retry_rounds(work, questions, answers, failed)
+    if FINAL_PASS:
+        final_pass(kb, index, questions, preps, answers, levels, failed)
+    runtime.FLAGS.stats["fallback"] = len(failed)
+    write_submission(questions, answers)
+    run_stats(n, len(failed), rounds, levels)
+    log(f"Готово: {runtime.FLAGS.stats}, tiny={runtime.FLAGS.tiny}, chat≈{runtime.TIMING.get('chat_full', 0):.1f} c (полный) / "
+        f"{runtime.TIMING.get('chat_compact', 0):.1f} c (компактный) / {runtime.TIMING.get('chat_min', 0):.1f} c (минимальный), "
+        f"dense={runtime.FLAGS.dense}, compact={runtime.FLAGS.compact}, minimal={runtime.FLAGS.minimal}, rerank_off={runtime.FLAGS.rerank_off}")
 
+
+def load_base(n: int, questions: list[tuple[str, str]]) -> tuple[KB, Index, list[str]]:
+    """База знаний, индекс BM25 и запасные ответы на все вопросы; без базы — пустая база и отказ по документам."""
+    try:
+        kb = build_kb()
+        index = Index(kb)
+        answers = [fallback_answer(kb, index, q) for _, q in questions]
+    except Exception as exc:  # noqa: BLE001 — без базы всё равно отдаём корректный файл
+        log(f"База знаний не загружена: {type(exc).__name__}: {exc}")
+        kb = KB([], [])
+        index = Index(kb)
+        answers = ["В базе знаний не найдено документов по этому вопросу, поэтому ответить по документам нельзя."] * n
+    return kb, index, answers
+
+
+def build_dense(kb: KB, index: Index, preps: list) -> float | None:
+    """Эмбеддинги базы (готовый индекс 7.2 или расчёт) и вопросов; → секунды на это (для PLATFORM PROBE)."""
+    if not kb.chunks:
+        return None
+    t_dense = time.monotonic()
+    if not (PREBUILT_INDEX and index.load_prebuilt().get("used")):
+        index.build_dense(cap=60.0)
+    dense_sec = round(time.monotonic() - t_dense, 1)
+    if index.vecs is not None:
+        embed_questions(preps)
+    return dense_sec
+
+
+def make_worker(kb: KB, index: Index, questions: list[tuple[str, str]], preps: list, levels: list):
+    """Ответ на вопрос i на уровне по оставшемуся времени → (i, ответ или None — остаётся запасной)."""
     def work(i: int) -> tuple[int, str | None]:
         try:
             level = choose_level()
@@ -127,7 +151,15 @@ def main() -> None:
         finally:
             with runtime.PROG.lock:
                 runtime.PROG.finished += 1
+    return work
 
+
+def first_pass(work, questions: list[tuple[str, str]], answers: list[str]) -> list[int]:
+    """Все вопросы параллельно; submission.csv переписывается каждые 10 ответов. → вопросы с запасным ответом."""
+    n = len(questions)
+    runtime.PROG.n = n
+    failed: list[int] = []
+    lock = threading.Lock()
     done = 0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         for fut in as_completed([pool.submit(work, i) for i in range(n)]):
@@ -143,7 +175,11 @@ def main() -> None:
                 write_submission(questions, answers)
                 log(f"Обработано {k}/{n}; уровень сейчас {choose_level()}, "
                     f"chat≈{runtime.TIMING.get('chat_full', 0):.1f}/{runtime.TIMING.get('chat_compact', 0):.1f} c")
-    # Повторные проходы по вопросам с запасным ответом, пока есть время
+    return failed
+
+
+def retry_rounds(work, questions: list[tuple[str, str]], answers: list[str], failed: list[int]) -> int:
+    """Повторные проходы по вопросам с запасным ответом, пока есть время (failed уменьшается на месте). → число проходов."""
     rounds = 0
     while failed and remaining() > 60 and rounds < 20:
         rounds += 1
@@ -159,14 +195,7 @@ def main() -> None:
         write_submission(questions, answers)
         if len(failed) == before:  # ничего не получилось — подождать, прежде чем пробовать снова
             time.sleep(min(20.0, max(0.0, remaining() - 60)))
-    if FINAL_PASS:
-        final_pass(kb, index, questions, preps, answers, levels, failed)
-    runtime.FLAGS.stats["fallback"] = len(failed)
-    write_submission(questions, answers)
-    run_stats(n, len(failed), rounds, levels)
-    log(f"Готово: {runtime.FLAGS.stats}, tiny={runtime.FLAGS.tiny}, chat≈{runtime.TIMING.get('chat_full', 0):.1f} c (полный) / "
-        f"{runtime.TIMING.get('chat_compact', 0):.1f} c (компактный) / {runtime.TIMING.get('chat_min', 0):.1f} c (минимальный), "
-        f"dense={runtime.FLAGS.dense}, compact={runtime.FLAGS.compact}, minimal={runtime.FLAGS.minimal}, rerank_off={runtime.FLAGS.rerank_off}")
+    return rounds
 
 
 def final_pass(kb, index, questions, preps, answers: list, levels: list, failed: list) -> None:

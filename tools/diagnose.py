@@ -68,7 +68,7 @@ def main() -> int:
     import checks
     import check_golden as CG
     import kb as kbmod
-    import pipeline
+    import result
     with contextlib.redirect_stderr(io.StringIO()):
         base = kbmod.build_kb()
     ids = kbmod.doc_ids(base)
@@ -105,7 +105,7 @@ def main() -> int:
                     pos.append((doc.label + (f", {clause}" if clause else ""), rh, ro))
                 (found if ok else missing).append(doc.label + (f", {clause}" if clause else ""))
             # (б) факты
-            au = A.audit(base, ids, checks, pipeline, row, ans)
+            au = A.audit(base, ids, checks, result, row, ans)
             ctx = ctxs.get(qid) or ""
             ctx_docs = [base.docs[i] for i in company_ctx] + [base.docs[i] for i in law_whole] + \
                 [base.docs[c.doc] for c in law_chunks]

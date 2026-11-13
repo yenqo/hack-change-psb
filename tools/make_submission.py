@@ -30,8 +30,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "index", "prompts", "checks", "pipeline", "probe",
-        "solution"]
+CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+        "retrieval", "answering", "result", "pipeline",
+        "probe", "solution"]
 PASS_ENV = ["LLM_BASE_URL", "OPENAI_BASE_URL", "BASE_URL", "LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDER_API_KEY",
             "RERANKER_API_KEY", "LLM_MODEL", "OPENAI_MODEL", "GEN_MODEL", "EMB_MODEL", "RERANKER_MODEL", "TEMPERATURE",
             "MAX_TOKENS", "MAX_WORKERS", "TOP_K", "RERANKER_TOP_N", "CHUNKER", "DEV_EXTRA_BODY"]

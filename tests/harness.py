@@ -26,8 +26,8 @@ BASELINE_FILE = ROOT / "tools" / "baseline" / "solution_v1_3.py"
 TODAY = "2026-11-10"
 
 # Порядок зависимостей модулей ядра (сверху вниз); отсутствующие пропускаются.
-CORE_MODULES = ["config", "textproc", "dates", "kb", "runtime", "llm", "index", "prompts", "checks", "pipeline",
-                "probe", "solution"]
+CORE_MODULES = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+                "retrieval", "answering", "result", "pipeline", "probe", "solution"]
 
 # Окружение ядра в тестах: без сети, дата и бюджет времени зафиксированы.
 TEST_ENV = {
@@ -65,13 +65,10 @@ def target() -> str:
     return t
 
 
-# Значения TEST_ENV, которые тест может переопределить через окружение подпроцесса
-OVERRIDABLE = {"SOLUTION_PREBUILT_INDEX", "SOLUTION_SOFT_DEGRADE", "SOLUTION_RERANK_RECHECK",
-               "SOLUTION_LEVEL_FORECAST", "SOLUTION_FINAL_PASS", "SOLUTION_CONCISE",
-               "SOLUTION_DATE_CONDITIONS", "SOLUTION_CROSS_REFS",
-               "SOLUTION_REWRITE", "SOLUTION_GENERAL_POINTS",
-               "SOLUTION_ANSWER_TEMPLATE", "SOLUTION_SOURCE_RULE", "SOLUTION_FEWSHOT",
-               "SOLUTION_CHECK_FIXES", "SOLUTION_CHUNK_FIXES"}
+# Значения TEST_ENV, которые тест может переопределить через окружение подпроцесса: все флаги доработок
+# (служебные — бюджет времени и дата — фиксированы). Новый флаг с включённым значением по умолчанию нужно добавить
+# в TEST_ENV со значением v1.3 — это проверяет tests/test_structure.py.
+OVERRIDABLE = {k for k in TEST_ENV if k.startswith("SOLUTION_") and k not in ("SOLUTION_TIME_BUDGET", "SOLUTION_TODAY")}
 
 
 def apply_env(extra: dict | None = None) -> None:

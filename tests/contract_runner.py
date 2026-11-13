@@ -26,7 +26,7 @@ import harness  # noqa: E402
 def platform_to_messages(q: str) -> list[dict]:
     """Строка платформы → история чата (для проверки обратного преобразования фасада)."""
     sys.path.insert(0, str(harness.ROOT))
-    from pipeline import parse_dialog
+    from dialog import parse_dialog
     current, history = parse_dialog(q)
     if not history:
         return [{"role": "user", "content": q}]

@@ -26,7 +26,10 @@ def main() -> int:
     import checks
     import index as indexmod
     import kb as kbmod
-    import pipeline
+    import dates
+    import dialog
+    import prompts
+    import retrieval
     with contextlib.redirect_stderr(io.StringIO()):
         base = kbmod.build_kb()
     idx = indexmod.Index(base)
@@ -46,11 +49,11 @@ def main() -> int:
             if q is None or final.startswith("По данным базы знаний"):
                 continue
             draft = (run.get("debug", {}).get(qid) or {}).get("draft") or final
-            prep = pipeline.Prepared(*pipeline.parse_dialog(q))
-            law_items, _ = pipeline.select_law(base, idx, prep, use_rerank=False)
-            comp = pipeline.company_context(base, idx, prep)
-            ctx = pipeline.build_user_message(base, comp, law_items, pipeline.date_note(q, base), prep.current,
-                                              prep.history)
+            prep = dialog.Prepared(*dialog.parse_dialog(q))
+            law_items, _ = retrieval.select_law(base, idx, prep, use_rerank=False)
+            comp = retrieval.company_context(base, idx, prep)
+            ctx = prompts.build_user_message(base, comp, law_items, dates.date_note(q, base), prep.current,
+                                             prep.history)
             res = {}
             for mode, rx in (("old", checks.DOCNUM_RE), ("new", checks.DOCNUM_RE_CI)):
                 checks._DOCNUM = rx
