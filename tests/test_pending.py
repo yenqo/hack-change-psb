@@ -572,3 +572,36 @@ class ChunkFixesTest(unittest.TestCase):
         n, heads, bare, _, _ = json.loads(run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_CHUNK_FIXES": "0"}))
         self.assertEqual((n, heads), (336, 8))
         self.assertGreater(bare, 0)
+
+
+@unittest.skipIf(harness.target() == "baseline", "нет в v1.3")
+class CompanyTopTest(unittest.TestCase):
+    """B22 (SOLUTION_COMPANY_TOP): на полном уровне — документы компании по поиску (до 4 + связанные), а не все 8."""
+
+    CODE = ("import json, contextlib, io, kb, index, dialog, retrieval\n"
+            "with contextlib.redirect_stderr(io.StringIO()):\n"
+            "    b = kb.build_kb(); i = index.Index(b)\n"
+            "def labels(q):\n"
+            "    diag = {}\n"
+            "    got = retrieval.company_context(b, i, dialog.Prepared(*dialog.parse_dialog(q)), diag=diag)\n"
+            "    return [d.label for d in got], sorted(set(diag['company_reason'].values()))\n"
+            "print(json.dumps([labels('Какая арендная плата по договору с ООО «Северный Склад»?'), "
+            "labels('Куда должна быть доставлена партия мебели по договору с «Альфа-Трейд»?'), "
+            "labels('Привет')], ensure_ascii=False))")
+
+    def test_on_selects_by_search(self) -> None:
+        rent, alpha, hello = json.loads(run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_COMPANY_TOP": "1"}))
+        self.assertLessEqual(len(rent[0]), 6)
+        self.assertIn("Договор аренды А-08-2024 Северный Склад", rent[0])
+        self.assertIn("search", rent[1])
+        # договор П-17 идёт вместе с доп. соглашением к нему, похожий контрагент «Альфа-Трейдинг» не теряется
+        for lab in ("Договор поставки П-17-2024 Альфа-Трейд", "Доп соглашение 1 к договору П-17-2024",
+                    "Договор поставки ПТ-05-2023 Альфа-Трейдинг"):
+            self.assertIn(lab, alpha[0])
+        # поиск ничего не нашёл (только BM25, совпадений нет) — все документы, как без флага
+        self.assertEqual((len(hello[0]), hello[1]), (8, ["company_full"]))
+
+    def test_off_gives_all(self) -> None:
+        rent, alpha, hello = json.loads(run_py(self.CODE, {**harness.TEST_ENV, "SOLUTION_COMPANY_TOP": "0"}))
+        self.assertEqual([len(rent[0]), len(alpha[0]), len(hello[0])], [8, 8, 8])
+        self.assertEqual(rent[1], ["company_full"])

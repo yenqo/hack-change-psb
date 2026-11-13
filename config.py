@@ -62,6 +62,7 @@ LAW_TOP = min(14, max(8, RERANK_N_ENV))           # фрагментов зак�
 LAW_BUDGET_CHARS = 12000                          # объём текста законов в контексте (полный режим)
 SMALL_LAW_CHARS = 7000                            # короткая статья закона идёт в контекст целиком
 COMPANY_FULL_LIMIT = 45000                        # до этого объёма документы компании идут целиком
+COMPANY_TOP_DOCS = 4                              # B22: документов компании по поиску на полном уровне (+ связанные)
 CHUNK_MAX = 1600                                  # максимальная длина фрагмента закона
 ANSWER_MAX_CHARS = 3000
 
@@ -83,6 +84,7 @@ DATE_CONDITIONS = env("SOLUTION_DATE_CONDITIONS", "") == "1"   # R4: справ�
 CROSS_REFS = env("SOLUTION_CROSS_REFS", "") == "1"             # R6: фрагменты законов, на которые ссылаются найденные
 ANSWER_TEMPLATE = env("SOLUTION_ANSWER_TEMPLATE", "1") != "0"  # B14 (принято): ответ «… Источник: …», после источника ничего
 CHUNK_FIXES = env("SOLUTION_CHUNK_FIXES", "") == "1"           # B19–B20: заголовок статьи — к первому пункту; продолжения с вводной фразой
+COMPANY_TOP = env("SOLUTION_COMPANY_TOP", "") == "1"           # B22: на полном уровне — документы компании по поиску, а не все
 CHECK_FIXES = env("SOLUTION_CHECK_FIXES", "1") != "0"          # пакет 2 (принято): ложные срабатывания проверок, B1, синонимы, даты
 SOURCE_RULE = env("SOLUTION_SOURCE_RULE", "1") != "0"          # B14b (принято): источник — где написано именно то, что в ответе
 GENERAL_POINTS = env("SOLUTION_GENERAL_POINTS", "1") != "0"    # B12 (принято): общие пункты больших статей — вне урезанного бюджета
