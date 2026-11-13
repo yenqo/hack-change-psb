@@ -1,4 +1,4 @@
-"""Точность проверки ссылок 7.1 (checks.unverified_refs) на размеченном наборе — без вызовов модели.
+"""Точность проверки ссылок 7.1 (refs.unverified_refs) на размеченном наборе — без вызовов модели.
 
     python tools/refcheck_eval.py
 
@@ -59,7 +59,7 @@ MUTATIONS = [  # (тип, шаблон, замена)
 
 
 def main() -> int:
-    import checks
+    import refs
     import kb as kbmod
     with contextlib.redirect_stderr(io.StringIO()):
         base = kbmod.build_kb()
@@ -67,7 +67,7 @@ def main() -> int:
     data = collect()
     fp_cases = []
     for q, a in data:
-        bad = checks.unverified_refs(base, a, q, ctx)
+        bad = refs.unverified_refs(base, a, q, ctx)
         if bad:
             fp_cases.append((a, bad))
     print(f"Исходных ответов: {len(data)}; со срабатыванием: {len(fp_cases)} ({len(fp_cases) / max(1, len(data)):.0%})")
@@ -87,8 +87,8 @@ def main() -> int:
             if mutant == a:
                 continue
             n += 1
-            before = {s for s, _ in checks.unverified_refs(base, a, q, ctx)}
-            after = {s for s, _ in checks.unverified_refs(base, mutant, q, ctx)}
+            before = {s for s, _ in refs.unverified_refs(base, a, q, ctx)}
+            after = {s for s, _ in refs.unverified_refs(base, mutant, q, ctx)}
             hit += bool(after - before)
         total_n += n
         total_hit += hit

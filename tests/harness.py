@@ -26,7 +26,7 @@ BASELINE_FILE = ROOT / "tools" / "baseline" / "solution_v1_3.py"
 TODAY = "2026-11-10"
 
 # Порядок зависимостей модулей ядра (сверху вниз); отсутствующие пропускаются.
-CORE_MODULES = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+CORE_MODULES = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks", "refs",
                 "retrieval", "answering", "result", "pipeline", "probe", "solution"]
 
 # Окружение ядра в тестах: без сети, дата и бюджет времени зафиксированы.

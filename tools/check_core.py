@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks", "refs",
         "retrieval", "answering", "result", "pipeline",
         "probe", "solution", "assistant"]
 ALLOWED_THIRD_PARTY = {"httpx"}

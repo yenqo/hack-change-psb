@@ -21,7 +21,7 @@ from typing import Callable
 
 CONTRACT_VERSION = "1.1"
 
-_CORE_MODULES = ("config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+_CORE_MODULES = ("config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks", "refs",
                  "retrieval", "answering", "result", "pipeline")
 
 

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from typing import TYPE_CHECKING
@@ -49,7 +50,6 @@ def weak_search(kb: KB, index: Index, prep: Prepared) -> bool:
 
 
 def _parse_rewrite(text: str) -> tuple[str, list[str]] | None:
-    import json
     m = re.search(r"\{.*\}", text or "", re.S)
     if not m:
         return None

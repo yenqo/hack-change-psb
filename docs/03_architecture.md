@@ -6,7 +6,7 @@
 
 | Изменение | Где | Флаг (по умолчанию) |
 |---|---|---|
-| Код разложен на плоские модули в корне (`config`, `textproc`, `dates`, `kb`, `runtime`, `llm`, `dialog`, `index`, `prompts`, `checks`, `retrieval`, `answering`, `result`, `pipeline`, `probe`, `solution`) без изменения поведения; 13.11 — `pipeline.py` разделён на `dialog`, `retrieval`, `answering`, `result` | все модули | — |
+| Код разложен на плоские модули в корне (`config`, `textproc`, `dates`, `kb`, `runtime`, `llm`, `dialog`, `index`, `prompts`, `checks`, `refs`, `retrieval`, `answering`, `result`, `pipeline`, `probe`, `solution`) без изменения поведения; 13.11 — `pipeline.py` разделён на `dialog`, `retrieval`, `answering`, `result` | все модули | — |
 | Фасад для веба `assistant.LegalAssistant`: тот же конвейер, `Result` с цитатами, статусом и полем `context` | `assistant.py`, `pipeline.py`, `result.py` | — |
 | Блоки `PLATFORM PROBE` / `RUN STATS` в stderr | `probe.py` | `SOLUTION_PROBE` (вкл) |
 | Готовый индекс эмбеддингов `index_vectors.json` вместо расчёта на старте | `index.py` | `SOLUTION_PREBUILT_INDEX` (вкл) |
@@ -17,7 +17,7 @@
 | Правило про источник, примеры без дат писем и записок (B14b) | `prompts.py` | `SOLUTION_SOURCE_RULE` (вкл) |
 | Проверка чисел без ложных срабатываний, B1, синонимы по началу слова, даты события из реплик пользователя (пакет 2) | `checks.py`, `textproc.py`, `dialog.py`, `answering.py` | `SOLUTION_CHECK_FIXES` (вкл) |
 | Исправления: обрезка источника, удаление предложений, счётчик B5, откат эмбеддингов (пакеты 1–2) | `checks.py`, `answering.py`, `llm.py` | без флага |
-| Номера документов не числа (B3), проверка ссылок (7.1) | `checks.py` | выкл — ждут golden set |
+| Номера документов не числа (B3), проверка ссылок (7.1) | `checks.py`, `refs.py` | выкл — ждут golden set |
 | Переформулировка только для поиска (R7b) | `answering.py` | `SOLUTION_REWRITE_PROMPT` (`1` — как R7; отклонено) |
 | Нарезка: заголовок к первому пункту, продолжения с вводной фразой (B19–B20) | `kb.py` | `SOLUTION_CHUNK_FIXES` (выкл, бэклог) |
 | Общие пункты больших статей вне урезанного бюджета — ставка НДС в вопросах о договорах (B12) | `retrieval.py` | `SOLUTION_GENERAL_POINTS` (вкл) |

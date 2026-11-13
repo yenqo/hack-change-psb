@@ -8,15 +8,15 @@ import time
 from typing import TYPE_CHECKING
 
 import runtime
-from checks import (clean_answer, drop_ref_sentences, drop_sentences, trim_after_source, unverified,
-                    unverified_refs)
+from checks import clean_answer, drop_ref_sentences, drop_sentences, trim_after_source, unverified
 from config import (ANSWER_TEMPLATE, CHECK_FIXES, CHECK_REFS, CONCISE, DATE_CONDITIONS, LAW_BUDGET_CHARS, REWRITE,
                     REWRITE_PROMPT, SOFT_DEGRADE, debug_dump, log, remaining)
 from dates import date_conditions, date_note
 from dialog import Prepared, search_query, user_text
 from llm import APIError, chat
-from prompts import (REPAIR_REFS, SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message,
-                     repair_refs_message)
+from prompts import (SYSTEM_TEXT, SYSTEM_TEXT_MINI, SYSTEM_TEXT_SHORT, SYSTEM_TINY, build_user_message,
+                     repair_numbers_message, repair_refs_message)
+from refs import unverified_refs
 from retrieval import company_context, maybe_rewrite, select_law
 from runtime import per_question_budget
 
@@ -27,9 +27,9 @@ if TYPE_CHECKING:
 
 def answer_tiny(kb: KB, index: Index, prep: Prepared, trace=None, info: dict | None = None) -> str:
     """Последняя ступень: запрос размером со стартовый пример организаторов."""
-    query = search_query(prep)
+    found = index.hybrid(search_query(prep), prep.qvec, {"company", "law"})[:6]
     parts, size = [], 0
-    for ci in index.hybrid(query, prep.qvec, {"company", "law"})[:6]:
+    for ci in found:
         c = kb.chunks[ci]
         if size + len(c.text) > 2800:
             continue
@@ -51,7 +51,7 @@ def answer_tiny(kb: KB, index: Index, prep: Prepared, trace=None, info: dict | N
         raise APIError("пустой ответ после очистки", transient=True)
     runtime.FLAGS.inc("level0")
     if info is not None:
-        info.update(level=0, chunks=[c for c in index.hybrid(query, prep.qvec, {"company", "law"})[:6]])
+        info.update(level=0, chunks=list(found))
     return ans
 
 
@@ -221,12 +221,7 @@ def _verify_and_repair(kb: KB, ans: str, messages: list[dict], user_msg: str, qt
         spans = [sp for sp, _ in bad]
         if bad:
             log(f"Неподтверждённые числа {spans[:5]} — запрашиваю исправление")
-            fix = (f"Черновик ответа:\n{ans}\n\nАвтоматическая проверка: числа или даты {', '.join(spans[:8])} не найдены "
-                   "в документах и не получаются простым расчётом из чисел документов и вопроса. Перепиши ответ: убери или "
-                   "замени их точными значениями из документов. Если число получено расчётом, приведи формулу с исходными "
-                   "числами из документов. Остальные требования к ответу сохраняются. Верни только итоговый текст ответа.")
-            if refs:
-                fix += " " + REPAIR_REFS.format(refs=", ".join(refs[:8]))
+            fix = repair_numbers_message(ans, spans, refs)
         else:
             log(f"Неподтверждённые ссылки {refs[:5]} — запрашиваю исправление")
             fix = repair_refs_message(ans, refs)

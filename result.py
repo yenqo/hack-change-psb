@@ -7,10 +7,11 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from checks import _CLAUSE_REF, _applies, _clause_key, _expand_nums, _mentions, _quote_span, kb_clauses
 from dates import event_periods
 from dialog import Prepared, event_text, search_query
 from kb import doc_markup
+from refs import CLAUSE_REF, applies, clause_key, expand_nums, kb_clauses, quote_span
+from refs import mentions as doc_mentions
 
 if TYPE_CHECKING:
     from index import Index
@@ -39,7 +40,7 @@ class Result:
 
 def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> list[dict]:
     """Ссылки ответа «документ + пункт» → цитаты со смещениями в тексте документа (get_document)."""
-    mentions = _mentions(kb, text, qtext)
+    mentions = doc_mentions(kb, text, qtext)
     periods = event_periods(event_text(qtext))
     cites: dict[tuple[int, str | None], dict] = {}
 
@@ -61,15 +62,15 @@ def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> lis
                 found = False
                 s, e = 0, len(d.text.split("\n", 1)[0])
             else:
-                s, e = _quote_span(d, hit["start"], hit["end"])
+                s, e = quote_span(d, hit["start"], hit["end"])
         cites[key] = {"doc_id": ids[d.idx], "doc_title": d.title, "doc_kind": d.kind, "clause": clause,
                       "quote": d.text[s:e], "start": s, "end": e, "found": found,
-                      "applies_to_event_date": _applies(d, periods)}
+                      "applies_to_event_date": applies(d, periods)}
 
     for s, e, d in mentions:
         add(d, None)
     last_point: dict[int, str] = {}
-    for m in _CLAUSE_REF.finditer(text):
+    for m in CLAUSE_REF.finditer(text):
         before = [x for x in mentions if x[0] <= m.start()]
         after = [x for x in mentions if x[0] >= m.end() and x[0] - m.end() < 60]
         if after and re.fullmatch(r"\s{0,3}", text[m.end():after[0][0]]):
@@ -83,13 +84,13 @@ def extract_citations(kb: KB, text: str, qtext: str, ids: dict[int, str]) -> lis
         else:
             continue
         others = [x[2] for x in reversed(before)] + [x[2] for x in after]
-        for num in _expand_nums(m.group(2)):
+        for num in expand_nums(m.group(2)):
             doc = target
-            key = _clause_key(doc, m.group(1), num, last_point.get(doc.idx))
+            key = clause_key(doc, m.group(1), num, last_point.get(doc.idx))
             if not any(c["clause"] == key for c in kb_clauses(doc)):
                 # в ближайшем документе такого пункта нет — берём ближайший упомянутый документ, где он есть
                 for o in others:
-                    k2 = _clause_key(o, m.group(1), num, last_point.get(o.idx))
+                    k2 = clause_key(o, m.group(1), num, last_point.get(o.idx))
                     if any(c["clause"] == k2 for c in kb_clauses(o)):
                         doc, key = o, k2
                         break
@@ -175,7 +176,7 @@ def build_context(kb: KB, index: Index, info: dict, prep: Prepared, qtext: str, 
 
     def doc_entry(d: Doc, included: str, reason: str) -> dict:
         return {"doc_id": ids[d.idx], "doc_title": d.title, "doc_kind": d.kind, "included": included, "reason": reason,
-                "applies_to_event_date": _applies(d, periods), "cited": ids[d.idx] in cited}
+                "applies_to_event_date": applies(d, periods), "cited": ids[d.idx] in cited}
 
     if info.get("level") == 0:   # короткий запрос: только найденные фрагменты
         by_doc: dict[int, list] = {}

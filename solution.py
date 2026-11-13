@@ -159,18 +159,13 @@ def first_pass(work, questions: list[tuple[str, str]], answers: list[str]) -> li
     n = len(questions)
     runtime.PROG.n = n
     failed: list[int] = []
-    lock = threading.Lock()
-    done = 0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        for fut in as_completed([pool.submit(work, i) for i in range(n)]):
-            i, ans = fut.result()
-            with lock:
-                if ans:
-                    answers[i] = ans
-                else:
-                    failed.append(i)
-                done += 1
-                k = done
+        for k, fut in enumerate(as_completed([pool.submit(work, i) for i in range(n)]), 1):
+            i, ans = fut.result()   # результаты разбирает только этот поток — блокировка не нужна
+            if ans:
+                answers[i] = ans
+            else:
+                failed.append(i)
             if k % 10 == 0 or k == n:
                 write_submission(questions, answers)
                 log(f"Обработано {k}/{n}; уровень сейчас {choose_level()}, "

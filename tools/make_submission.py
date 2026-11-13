@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks",
+CORE = ["config", "textproc", "dates", "kb", "runtime", "llm", "dialog", "index", "prompts", "checks", "refs",
         "retrieval", "answering", "result", "pipeline",
         "probe", "solution"]
 PASS_ENV = ["LLM_BASE_URL", "OPENAI_BASE_URL", "BASE_URL", "LLM_API_KEY", "OPENAI_API_KEY", "EMBEDDER_API_KEY",

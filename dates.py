@@ -6,7 +6,7 @@ import re
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from textproc import norm
+from textproc import norm, tokenize
 
 if TYPE_CHECKING:
     from kb import KB
@@ -119,12 +119,11 @@ def _overlap(start: date, end: date, d: date) -> str:
     return "spans"
 
 
-_GENERIC = {"договор", "договор", "подписа", "подписан", "срок", "нужн", "ли", "год", "месяц", "ооо", "обществ", "документ",
+_GENERIC = {"договор", "подписа", "подписан", "срок", "нужн", "ли", "год", "месяц", "ооо", "обществ", "документ",
             "пункт", "требован", "услов"}
 
 
 def _stems(text: str) -> set:
-    from textproc import tokenize
     return {t for t in tokenize(text) if not t.isdigit() and len(t) > 2 and t not in _GENERIC}
 
 
