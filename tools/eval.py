@@ -92,7 +92,7 @@ def select(rows: list[dict], split: str = "all", ids: str = "") -> list[dict]:
 def current_turn(question: str) -> str:
     """Последняя реплика пользователя — та же логика, что в ядре."""
     sys.path.insert(0, str(ROOT))
-    from pipeline import parse_dialog
+    from dialog import parse_dialog
     return parse_dialog(question)[0]
 
 

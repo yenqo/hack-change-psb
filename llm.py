@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import math
 import random
-import re
 import threading
 import time
 
@@ -13,8 +12,9 @@ import httpx
 
 import runtime
 from config import (RERANK_RECHECK, API_BASE, EMBED_KEY, EMB_MODEL, LLM_KEY, LLM_MODEL, MAX_TOKENS, MAX_WORKERS, RERANKER_MODEL,
-    RERANK_KEY, TEMPERATURE, log, remaining)
+    RERANK_KEY, TEMPERATURE, log, remaining, request_remaining)
 from runtime import llm_seems_down
+from textproc import THINK_RE
 
 
 class APIError(Exception):
@@ -93,7 +93,7 @@ def post_json(path: str, key: str, payload: dict, timeout: float = 90.0, attempt
     last = "?"
     while True:
         wait_cooldown()
-        t = min(timeout, remaining() - 3)
+        t = min(timeout, remaining() - 3, request_remaining() - 1)
         if t < 3:
             raise APIError(f"не осталось времени ({last})", transient=True)
         GATE.acquire()
@@ -143,17 +143,15 @@ def post_json(path: str, key: str, payload: dict, timeout: float = 90.0, attempt
         fails += 1
         if fails >= attempts or time.monotonic() - start > max_wait + timeout:
             raise APIError(f"{last} {path}", transient=True)
-        time.sleep(min(2 ** (fails - 1) + random.random(), 10.0, max(0.0, remaining() - 5)))
-
-
-THINK_RE = re.compile(r"<think>.*?</think>", re.S)
+        time.sleep(min(2 ** (fails - 1) + random.random(), 10.0, max(0.0, remaining() - 5),
+                       max(0.0, request_remaining() - 1)))
 
 
 def chat(messages: list[dict], max_tokens: int = MAX_TOKENS, timeout: float = 90.0) -> str:
     # Если модель несколько раз подряд не ответила, не бросаем вопрос, а ждём: раз в 20 с один поток
     # проверяет модель, остальные ждут его результата. Сдаёмся только у самого дедлайна.
     while llm_seems_down():
-        if remaining() < 30:
+        if remaining() < 30 or request_remaining() < 5:
             raise APIError("модель недоступна до конца отведённого времени", transient=True)
         time.sleep(2.0)
     try:

@@ -40,7 +40,7 @@ except ImportError:
     sys.modules["httpx"] = types.ModuleType("httpx")
 import checks  # noqa: E402
 import kb as kbmod  # noqa: E402
-from pipeline import parse_dialog  # noqa: E402
+from dialog import parse_dialog  # noqa: E402
 from prompts import FEW_SHOT  # noqa: E402
 
 COMPANY = [  # (шаблон ссылки, фрагмент метки документа в базе)

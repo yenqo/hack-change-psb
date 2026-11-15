@@ -39,13 +39,13 @@ def numbers(checks, text: str, answer: bool) -> set:
     return vals | {("date", d) for d in dates}
 
 
-def audit(kb, ids, checks, pipeline, row: dict, answer: str) -> dict:
+def audit(kb, ids, checks, result, row: dict, answer: str) -> dict:
     q, exp = row["question"], row["expected"]
     allowed = numbers(checks, exp, True) | numbers(checks, q, False)
     extra_nums = sorted(str(x) for x in numbers(checks, answer, True) - allowed
                         if not (isinstance(x, float) and 1990 <= x <= 2100 and x in {round(y, 4) for y in allowed if isinstance(y, float)}))
-    ca = pipeline.extract_citations(kb, answer, q, ids)
-    ce = pipeline.extract_citations(kb, exp, q, ids)
+    ca = result.extract_citations(kb, answer, q, ids)
+    ce = result.extract_citations(kb, exp, q, ids)
     exp_docs = {c["doc_id"] for c in ce}
     exp_refs = {(c["doc_id"], c["clause"]) for c in ce if c["clause"]}
     extra_docs = sorted({c["doc_id"] for c in ca} - exp_docs)
@@ -69,7 +69,7 @@ def main() -> int:
     args = ap.parse_args()
     import checks
     import kb as kbmod
-    import pipeline
+    import result
     with contextlib.redirect_stderr(io.StringIO()):
         kb = kbmod.build_kb()
     ids = kbmod.doc_ids(kb)
@@ -79,7 +79,7 @@ def main() -> int:
         run = json.loads((ROOT / "eval" / "runs" / f"{lb}.json").read_text(encoding="utf-8"))
         for qid, ans in run["answers"].items():
             if qid in rows and not ans.startswith("По данным базы знаний"):
-                results.append((lb, qid, ans, audit(kb, ids, checks, pipeline, rows[qid], ans)))
+                results.append((lb, qid, ans, audit(kb, ids, checks, result, rows[qid], ans)))
     n = len(results)
     share = lambda f: sum(1 for *_, a in results if f(a)) / max(1, n)  # noqa: E731
     print(f"# Аудит лишнего в ответах ({n} ответов: {args.labels})\n")

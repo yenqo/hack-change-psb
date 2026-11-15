@@ -138,6 +138,7 @@ STOPWORDS = set("""
 каков сколько можно нужно ли этот этой этого этом этих эту""".split())
 
 WORD_RE = re.compile(r"[a-zа-я0-9]+")
+THINK_RE = re.compile(r"<think>.*?</think>", re.S)   # рассуждения модели в ответе — вырезаются (llm, checks)
 CODE_RE = re.compile(r"\b[a-zа-я]{1,4}-\d+(?:[/-]\d+)?\b")
 
 

@@ -66,9 +66,10 @@ def main() -> int:
     args = ap.parse_args()
     import answer_audit as A
     import checks
+    import refs
     import check_golden as CG
     import kb as kbmod
-    import pipeline
+    import result
     with contextlib.redirect_stderr(io.StringIO()):
         base = kbmod.build_kb()
     ids = kbmod.doc_ids(base)
@@ -105,12 +106,12 @@ def main() -> int:
                     pos.append((doc.label + (f", {clause}" if clause else ""), rh, ro))
                 (found if ok else missing).append(doc.label + (f", {clause}" if clause else ""))
             # (б) факты
-            au = A.audit(base, ids, checks, pipeline, row, ans)
+            au = A.audit(base, ids, checks, result, row, ans)
             ctx = ctxs.get(qid) or ""
             ctx_docs = [base.docs[i] for i in company_ctx] + [base.docs[i] for i in law_whole] + \
                 [base.docs[c.doc] for c in law_chunks]
             real_nums = [s for s, _ in checks.unverified(ans, ctx, row["question"])] if ctx else None
-            real_refs = [s for s, _ in checks.unverified_refs(base, ans, row["question"], ctx_docs)] if ctx_docs else None
+            real_refs = [s for s, _ in refs.unverified_refs(base, ans, row["question"], ctx_docs)] if ctx_docs else None
             q = jd["q"].get(qid, {})
             fw = lambda t: (re.match(r"^\W*(да|нет)\b", t, re.I) or [None, None])[1]   # noqa: E731
             yes_no = (fw(ans) or "").lower() or None
