@@ -35,6 +35,8 @@ TEST_ENV = {
     "SOLUTION_TIME_BUDGET": "3600",
     "SOLUTION_TODAY": TODAY,
     "MAX_WORKERS": "1",
+    # Golden master сохраняет модель стартера v1.3; текущий default — Qwen3-Reranker-8B.
+    "RERANKER_MODEL": "cohere/rerank-5-fast",
     # golden master сравнивает с v1.3 — без готового индекса (его путь проверяет tests/test_prebuilt_index.py)
     "SOLUTION_PREBUILT_INDEX": "0",
     # и без исправлений устойчивости (B5 и далее): их поведение проверяют tests/test_pending.py и tools/fault_eval.py

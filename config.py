@@ -43,7 +43,7 @@ EMBED_KEY = env("EMBEDDER_API_KEY") or LLM_KEY
 RERANK_KEY = env("RERANKER_API_KEY") or LLM_KEY
 LLM_MODEL = env("LLM_MODEL") or env("GEN_MODEL") or env("OPENAI_MODEL", "deepseek/deepseek-v4.1-flash")
 EMB_MODEL = env("EMB_MODEL", "baai/bge-m3")
-RERANKER_MODEL = env("RERANKER_MODEL", "cohere/rerank-5-fast")
+RERANKER_MODEL = env("RERANKER_MODEL", "Qwen/Qwen3-Reranker-8B")
 
 # Значения по умолчанию и границы — как в стартовом примере организаторов: прокси может не принимать
 # запросы с параметрами сверх заданных платформой.
@@ -84,7 +84,7 @@ DATE_CONDITIONS = env("SOLUTION_DATE_CONDITIONS", "") == "1"   # R4: справ�
 CROSS_REFS = env("SOLUTION_CROSS_REFS", "") == "1"             # R6: фрагменты законов, на которые ссылаются найденные
 ANSWER_TEMPLATE = env("SOLUTION_ANSWER_TEMPLATE", "1") != "0"  # B14 (принято): ответ «… Источник: …», после источника ничего
 CHUNK_FIXES = env("SOLUTION_CHUNK_FIXES", "") == "1"           # B19–B20: заголовок статьи — к первому пункту; продолжения с вводной фразой
-COMPANY_TOP = env("SOLUTION_COMPANY_TOP", "") == "1"           # B22: на полном уровне — документы компании по поиску, а не все
+COMPANY_TOP = env("SOLUTION_COMPANY_TOP", "1") != "0"          # B22: на полном уровне — документы компании по поиску, а не все
 CHECK_FIXES = env("SOLUTION_CHECK_FIXES", "1") != "0"          # пакет 2 (принято): ложные срабатывания проверок, B1, синонимы, даты
 SOURCE_RULE = env("SOLUTION_SOURCE_RULE", "1") != "0"          # B14b (принято): источник — где написано именно то, что в ответе
 GENERAL_POINTS = env("SOLUTION_GENERAL_POINTS", "1") != "0"    # B12 (принято): общие пункты больших статей — вне урезанного бюджета

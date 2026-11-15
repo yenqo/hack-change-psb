@@ -41,7 +41,8 @@ PROD_DEFAULTS = {"SOLUTION_PREBUILT_INDEX": "1", "SOLUTION_SOFT_DEGRADE": "1", "
                  "SOLUTION_LEVEL_FORECAST": "1", "SOLUTION_FINAL_PASS": "1", "SOLUTION_CONCISE": "1",
                  "SOLUTION_DATE_CONDITIONS": "0", "SOLUTION_CROSS_REFS": "0", "SOLUTION_REWRITE": "1",
                  "SOLUTION_GENERAL_POINTS": "1", "SOLUTION_ANSWER_TEMPLATE": "1", "SOLUTION_FEWSHOT": "fictional",
-                 "SOLUTION_SOURCE_RULE": "1", "SOLUTION_CHECK_FIXES": "1", "SOLUTION_CHUNK_FIXES": "0"}
+                 "SOLUTION_SOURCE_RULE": "1", "SOLUTION_CHECK_FIXES": "1", "SOLUTION_CHUNK_FIXES": "0",
+                 "SOLUTION_COMPANY_TOP": "1"}
 SCENARIOS = ["normal", "fabricated", "reject_full", "reject_compact", "tiny", "transient", "no_dense"]
 _TIME_KEY = re.compile(r"(?i)time|elapsed|latency|_ms$|_sec$|seconds|^t_")
 

@@ -88,7 +88,7 @@ def dump(kbmod, base, out: Path) -> None:
              "после изменения нарезки пересоздать. Полный текст фрагментов и поисковый текст — в файлах документов.", "",
              f"Документов: {len(base.docs)}; фрагментов: {len(base.chunks)}.", "",
              "Страница со всеми документами, границами фрагментов и переключателем «текущая нарезка / с B19–B20» — "
-             "[index.html](index.html) (открыть в браузере; пересоздаётся `--html eval/chunks/index.html`).", "",
+             "локальный `index.html` (не хранится в git; создать командой `python tools/show_chunks.py --html eval/chunks/index.html` и открыть в браузере).", "",
              "| Документ | Вид | Символов | Фрагментов | Файл |", "|---|---|---|---|---|"]
     for d, chunks, name in rows:
         lines.append(f"| {d.label} | {'закон' if d.kind == 'law' else 'компания'} | {len(d.text)} | {len(chunks)} | [{name}]({name}) |")
