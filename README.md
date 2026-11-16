@@ -205,17 +205,18 @@ SOLUTION_X=1 .venv/bin/python tools/eval.py --set eval/scenarios/X_agent.csv run
 Чат для юристов с просмотром документов и подсвеченных пунктов, на которые опирается ответ. Ответы — тем же ядром, что и сабмит.
 
 ```bash
-cp .env.example .env        # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL — провайдер DeepSeek V4.1 Flash
-docker compose up --build   # веб-интерфейс + эмбеддинги bge-m3 (llama.cpp)
+cp .env.example .env        # адрес/ключ прокси и LLM_MODEL, EMB_MODEL, RERANKER_MODEL от организаторов
+docker compose up --build   # один контейнер web; все три модели — через API
 ```
 
-Открыть http://localhost:8000. Первый запуск — несколько минут (скачивается модель bge-m3 ~0,6 ГБ), повторные — секунды.
-Без эмбеддингов (поиск по законам только BM25): `docker compose up --build --no-deps web`.
+Открыть http://localhost:8000. Контейнер не скачивает веса моделей: генерация, эмбеддинги и реранкер
+используют единый `LLM_BASE_URL` и общий `LLM_API_KEY` (отдельные ключи поиска — необязательны).
+Значения можно передать через `.env` или окружение запуска. Адрес прокси должен быть доступен из контейнера.
+При обновлении старой установки: `docker compose up -d --build --remove-orphans` уберёт прежний контейнер `emb`.
 
 | Порт | Сервис |
 |---|---|
 | 8000 | веб-интерфейс и API (`/docs` — документация API); другой порт — `WEB_HOST_PORT` |
-| 8080 | эмбеддинги, только внутри сети compose |
 
 Подробно — [web/README.md](web/README.md): архитектура, переменные окружения, API, сценарий проверки, разработка без Docker,
 развёртывание на сервере Ubuntu 22.04 с доступом по IPv4.

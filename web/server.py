@@ -1,12 +1,13 @@
-"""Веб-бэкенд юридического ассистента: FastAPI поверх ядра (assistant.LegalAssistant, контракт 1.0).
+"""Веб-бэкенд юридического ассистента: FastAPI поверх ядра (assistant.LegalAssistant, контракт 1.1).
 
 Запуск из корня репозитория:
     .venv/bin/uvicorn web.server:app --port 8000
 
 Переменные окружения (читаются также из .env в корне репозитория, окружение важнее):
-    LLM_BASE_URL, LLM_API_KEY, LLM_MODEL  — провайдер генерации (DeepSeek V4.1 Flash)
+    LLM_BASE_URL, LLM_API_KEY — единый OpenAI-совместимый прокси всех трёх моделей
+    LLM_MODEL, EMB_MODEL, RERANKER_MODEL — идентификаторы моделей, предоставленные организаторами
     EMB_BASE_URL     — необязательно: локальный OpenAI-совместимый сервер эмбеддингов bge-m3
-                       (например, llama-server на http://127.0.0.1:8081/v1). Без него поиск по законам — BM25.
+                       (например, llama-server на http://127.0.0.1:8081/v1). Без него используется LLM_BASE_URL.
     EMB_LOCAL_MODEL  — имя модели для этого сервера (по умолчанию bge-m3)
     RERANK_BASE_URL  — необязательно: локальный сервер реранкера с /rerank
     WEB_PORT         — порт, на котором запущен этот сервер (по умолчанию 8000), нужен для маршрутизации
@@ -48,7 +49,7 @@ sys.path.insert(0, str(ROOT))  # модули ядра лежат плоско �
 
 
 def load_dotenv(path: Path) -> None:
-    """KEY=VALUE из .env; уже заданные переменные окружения не перезаписываются."""
+    """KEY=VALUE из .env; явно заданное окружение, включая пустые значения, важнее файла."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -57,7 +58,7 @@ def load_dotenv(path: Path) -> None:
             continue
         k, v = line.split("=", 1)
         k, v = k.strip(), v.strip().strip('"').strip("'")
-        if v and not os.environ.get(k):
+        if v and k not in os.environ:
             os.environ[k] = v
 
 
@@ -79,7 +80,7 @@ UPSTREAM_KEY = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
 # Пустое значение (например, скопированное из .env.example) означает «по умолчанию»
 EMB_BASE = os.environ.get("EMB_BASE_URL", "").rstrip("/")
 EMB_LOCAL_MODEL = os.environ.get("EMB_LOCAL_MODEL") or "bge-m3"
-# Сколько ждать сервер эмбеддингов при старте (в Docker он сначала скачивает модель ~0,6 ГБ)
+# Ожидание отдельного сервера эмбеддингов — только для локального режима разработки.
 EMB_WAIT_SECONDS = float(os.environ.get("EMB_WAIT_SECONDS") or 300)
 RERANK_BASE = os.environ.get("RERANK_BASE_URL", "").rstrip("/")
 WEB_PORT = int(os.environ.get("WEB_PORT") or 8000)
@@ -148,7 +149,7 @@ class Core:
 
 def wait_embeddings(base: str, timeout: float) -> bool:
     """Ждёт, пока сервер эмбеддингов (llama-server) ответит 200 на /health. Если его хост вообще не существует
-    (контейнер эмбеддингов не запущен — лёгкий режим), не ждёт: ядро будет работать на BM25."""
+    (локальный сервер разработки не запущен), не ждёт: ядро будет работать на BM25."""
     url = base.removesuffix("/v1") + "/health"
     host = httpx.URL(url).host
     end = time.monotonic() + timeout

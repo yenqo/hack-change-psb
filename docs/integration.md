@@ -206,8 +206,7 @@ CORE_TARGET=root python -m unittest discover -s tests -p "test_contract.py"
 Веб-интерфейс — `web/server.py` (FastAPI) и `web/frontend/` (React); подробно — [web/README.md](../web/README.md).
 
 ```bash
-docker compose up --build            # веб + эмбеддинги bge-m3 (llama.cpp), http://localhost:8000
-docker compose up --build --no-deps web   # без эмбеддингов: поиск по законам только BM25
+docker compose up --build            # один контейнер web, http://localhost:8000; все модели через API
 ```
 
 Как веб использует фасад:
@@ -219,7 +218,9 @@ docker compose up --build --no-deps web   # без эмбеддингов: по�
 - **`list_documents()` / `get_document()`** — каталог «Базы знаний» и просмотр документа с подсветкой
   `citations[].start/end`, `context.documents[].search_hits/fragments`, `edition_notes`, `removed_instructions`.
 - **`answer_timeout`** — 150 с (`WEB_ANSWER_TIMEOUT`).
-- **Маршрутизация моделей.** Ядро ходит во все модели по одному `LLM_BASE_URL`. Если задан `EMB_BASE_URL`, веб передаёт
+- **API моделей в Docker.** Ядро вызывает все три модели напрямую по одному `LLM_BASE_URL`, с ключом
+  `LLM_API_KEY` (либо отдельными ключами поиска); идентификаторы моделей задаёт окружение.
+  Только для разработки без Docker: если задан `EMB_BASE_URL`, веб передаёт
   ядру в `overrides` свой адрес `http://127.0.0.1:<WEB_PORT>/internal/llm/v1` с одноразовым ключом: генерация уходит
   к провайдеру с настоящим ключом, эмбеддинги — на `EMB_BASE_URL`, реранкер — на `RERANK_BASE_URL` или 404.
   Перед `warmup()` веб ждёт готовности сервера эмбеддингов (`EMB_WAIT_SECONDS`); если его нет — отвечает ядру 404
