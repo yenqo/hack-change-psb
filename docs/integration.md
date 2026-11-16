@@ -206,7 +206,7 @@ CORE_TARGET=root python -m unittest discover -s tests -p "test_contract.py"
 Веб-интерфейс — `web/server.py` (FastAPI) и `web/frontend/` (React); подробно — [web/README.md](../web/README.md).
 
 ```bash
-docker compose up --build            # один контейнер web, http://localhost:8000; все модели через API
+docker compose up -d --build            # один контейнер web, http://localhost:8000; все модели через API
 ```
 
 Как веб использует фасад:

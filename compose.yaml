@@ -1,5 +1,5 @@
 # Запуск всех компонентов одной командой:
-#   docker compose up --build
+#   docker compose up -d --build
 # Открыть: http://localhost:8000
 #
 # Все три модели доступны через единый API-прокси организаторов.

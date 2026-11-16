@@ -29,7 +29,7 @@ OpenAI-совместимый прокси `LLM_BASE_URL` с ключом `LLM_A
 
 ```bash
 cp .env.example .env        # заполнить адрес, ключ и идентификаторы всех трёх моделей
-docker compose up --build
+docker compose up -d --build
 ```
 
 Открыть http://localhost:8000.
@@ -38,7 +38,7 @@ docker compose up --build
   во время работы — к API-прокси.
 - При прогреве проверяется готовый индекс `index_vectors.json`; если он несовместим с API эмбеддингов,
   ядро рассчитывает векторы через `/embeddings`. При недоступности эмбеддингов остаётся поиск BM25.
-- Другой порт на хосте: `WEB_HOST_PORT=8080 docker compose up --build`.
+- Другой порт на хосте: `WEB_HOST_PORT=8080 docker compose up -d --build`.
 - Остановить: `docker compose down`.
 - Обновить прежнюю установку с контейнером `emb`: `docker compose up -d --build --remove-orphans`.
   Старый том с весами больше не используется и автоматически не удаляется.
@@ -139,7 +139,7 @@ sudo usermod -aG docker $USER   # затем перелогиниться, чт�
 
 ```bash
 git clone <адрес репозитория> psb && cd psb
-git checkout web                 # ветка с веб-интерфейсом (до слияния в main)
+git checkout main                # финальная версия для жюри
 cp .env.example .env
 nano .env                        # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, EMB_MODEL, RERANKER_MODEL
 chmod 600 .env
