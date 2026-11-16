@@ -20,7 +20,9 @@ data/questions.csv
 
 # Eval caches (embeddings, rerank, chat, judge)
 eval/cache/
+eval/runs/
 eval/chunks/index.html
+*.tsbuildinfo
 
 # Secrets
 .env

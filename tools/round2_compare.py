@@ -1,4 +1,4 @@
-"""Сравнение задачи второго раунда с калибровкой на временном стенде (docs/AGENT_TASKS_ROUND2.md, раздел 2.3).
+"""Сравнение задачи второго раунда с калибровкой на временном стенде (eval/stand.md).
 
     python tools/round2_compare.py --task R4_demo_r1,R4_demo_r2 \
         --scenarios eval/scenarios/R4_agent.csv --sc-off R4_sc_f0_r1,R4_sc_f0_r2 --sc-on R4_sc_f1_r1,R4_sc_f1_r2

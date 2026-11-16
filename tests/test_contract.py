@@ -158,14 +158,14 @@ class ContractTest(unittest.TestCase):
 
 @skip_baseline
 class CitationsOnRealAnswersTest(unittest.TestCase):
-    """Цитаты и статусы на реальных ответах модели (смоук-прогон, сохранён в eval/runs) — без сети."""
+    """Цитаты и статусы на реальных ответах модели (смоук-прогон в tests/fixtures) — без сети."""
 
     def test_offsets_and_resolution(self) -> None:
         import contextlib
         import csv
         import io
         core = harness.load_core()
-        run = json.loads((harness.ROOT / "eval" / "runs" / "smoke_dense_current.json").read_text(encoding="utf-8"))
+        run = json.loads((harness.FIXTURES / "smoke_dense_current.json").read_text(encoding="utf-8"))
         with open(harness.ROOT / "eval" / "smoke_demo.csv", encoding="utf-8", newline="") as f:
             qs = {r["id"]: r["question"] for r in csv.DictReader(f)}
         with contextlib.redirect_stderr(io.StringIO()):
