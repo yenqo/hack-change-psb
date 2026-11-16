@@ -20,6 +20,7 @@ data/questions.csv
 
 # Eval caches (embeddings, rerank, chat, judge)
 eval/cache/
+eval/chunks/index.html
 
 # Secrets
 .env

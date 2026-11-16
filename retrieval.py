@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING
 
 import runtime
-from config import (CANDIDATES, COMPANY_FULL_LIMIT, CROSS_REFS, GENERAL_POINTS, LAW_BUDGET_CHARS, LAW_TOP,
+from config import (CANDIDATES, COMPANY_FULL_LIMIT, COMPANY_TOP, COMPANY_TOP_DOCS, CROSS_REFS, GENERAL_POINTS, LAW_BUDGET_CHARS, LAW_TOP,
                     MAX_WORKERS, MODE, REWRITE_BM25, REWRITE_COS, SMALL_LAW_CHARS, log, remaining)
 from dialog import Prepared, parse_dialog, search_query
 from kb import cross_refs, related_docs
@@ -273,13 +273,17 @@ def _add_cross_refs(kb: KB, order: list[int], items: dict, reasons: dict, budget
 
 def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False, minimal: bool = False,
                     diag: dict | None = None) -> list[Doc]:
+    """Документы компании в контекст: на полном уровне — все целиком (если помещаются), на пониженных — найденные
+    поиском и связанные с ними (доп. соглашение, редакции, документ, на который ссылаются). B22 (флаг COMPANY_TOP):
+    и на полном уровне — до COMPANY_TOP_DOCS найденных плюс связанные."""
     docs = kb.company
-    if not compact and not minimal and sum(len(d.text) for d in docs) <= COMPANY_FULL_LIMIT:
+    full = not compact and not minimal
+    if full and not COMPANY_TOP and sum(len(d.text) for d in docs) <= COMPANY_FULL_LIMIT:
         if diag is not None:
             diag["company_reason"] = {d.idx: "company_full" for d in docs}
         return docs
     limit = 5000 if minimal else (10000 if compact else COMPANY_FULL_LIMIT)
-    max_docs = 2 if minimal else (4 if compact else 8)
+    max_docs = 2 if minimal else (4 if compact else (COMPANY_TOP_DOCS if COMPANY_TOP else 8))
     ranked = _search(index, search_query(prep, assistant=True), prep, {"company"})
     chosen: list[Doc] = []
     size = 0
@@ -297,4 +301,9 @@ def company_context(kb: KB, index: Index, prep: Prepared, compact: bool = False,
                 diag.setdefault("company_reason", {})[g.idx] = "search" if g is d else "related"
         if len(chosen) >= max_docs:
             break
+    if full and COMPANY_TOP and not chosen and sum(len(d.text) for d in docs) <= COMPANY_FULL_LIMIT:
+        # B22: поиск ничего не нашёл (нет совпадений ни по словам, ни по смыслу) — как без флага, все документы
+        if diag is not None:
+            diag["company_reason"] = {d.idx: "company_full" for d in docs}
+        return docs
     return [d for d in docs if d in chosen]  # исходный порядок документов

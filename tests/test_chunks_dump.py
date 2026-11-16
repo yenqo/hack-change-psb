@@ -30,8 +30,10 @@ class ChunksDumpTest(unittest.TestCase):
             out = Path(tmp) / "index.html"
             subprocess.run([sys.executable, str(harness.ROOT / "tools" / "show_chunks.py"), "--html", str(out)],
                            check=True, capture_output=True, cwd=harness.ROOT)
-            self.assertTrue(saved.is_file() and saved.read_text(encoding="utf-8") == out.read_text(encoding="utf-8"),
-                            "eval/chunks/index.html устарела — tools/show_chunks.py --html eval/chunks/index.html")
+            self.assertTrue(out.is_file(), "генератор не создал HTML нарезки")
+            if saved.is_file():  # локальный HTML больше не хранится в git
+                self.assertEqual(saved.read_text(encoding="utf-8"), out.read_text(encoding="utf-8"),
+                                 "eval/chunks/index.html устарела — tools/show_chunks.py --html eval/chunks/index.html")
 
 
 if __name__ == "__main__":

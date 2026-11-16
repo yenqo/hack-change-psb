@@ -6,7 +6,7 @@
 Golden master (tests/test_golden_master.py) проверяет только путь v1.3: все флаги после v1.3 в тестах выключены.
 Отпечаток снимает то же самое (точные тексты запросов к чату, запросы к эмбеддеру и реранкеру, ответы, счётчики)
 для текущих настроек по умолчанию («prod») и для «всё включено» («all»: плюс выключенные флаги B3, 7.1, R4, R6,
-B19–B20) на расширенном наборе вопросов: демо + целевые сценарии eval/scenarios (там срабатывают R7 и B12).
+B19–B20, B22) на расширенном наборе вопросов: демо + целевые сценарии eval/scenarios (там срабатывают R7 и B12).
 Заглушка прокси — из tests/golden_runner.py; на запрос переформулирования (R7) она отвечает разбираемым JSON,
 чтобы ветка R7 выполнялась целиком. Дополнительно — веб-путь: ответы фасада LegalAssistant (статус, цитаты,
 контекст, предупреждения, отладка) без времён.
@@ -30,7 +30,7 @@ TESTS = ROOT / "tests"
 CONFIGS = {
     "prod": {},
     "all": {"SOLUTION_CROSS_REFS": "1", "SOLUTION_DATE_CONDITIONS": "1", "SOLUTION_CHUNK_FIXES": "1",
-            "SOLUTION_CHECK_REFS": "1", "SOLUTION_FIX_DOCNUM": "1"},
+            "SOLUTION_CHECK_REFS": "1", "SOLUTION_FIX_DOCNUM": "1", "SOLUTION_COMPANY_TOP": "1"},
     # ветки «выключено» у принятых флагов (кроме тех, что выключает golden master v1.3)
     "alt": {"SOLUTION_REWRITE_PROMPT": "0", "SOLUTION_FEWSHOT": "demo", "SOLUTION_SOURCE_RULE": "0",
             "SOLUTION_CHECK_FIXES": "0", "SOLUTION_GENERAL_POINTS": "0", "SOLUTION_ANSWER_TEMPLATE": "0"},
@@ -41,7 +41,8 @@ PROD_DEFAULTS = {"SOLUTION_PREBUILT_INDEX": "1", "SOLUTION_SOFT_DEGRADE": "1", "
                  "SOLUTION_LEVEL_FORECAST": "1", "SOLUTION_FINAL_PASS": "1", "SOLUTION_CONCISE": "1",
                  "SOLUTION_DATE_CONDITIONS": "0", "SOLUTION_CROSS_REFS": "0", "SOLUTION_REWRITE": "1",
                  "SOLUTION_GENERAL_POINTS": "1", "SOLUTION_ANSWER_TEMPLATE": "1", "SOLUTION_FEWSHOT": "fictional",
-                 "SOLUTION_SOURCE_RULE": "1", "SOLUTION_CHECK_FIXES": "1", "SOLUTION_CHUNK_FIXES": "0"}
+                 "SOLUTION_SOURCE_RULE": "1", "SOLUTION_CHECK_FIXES": "1", "SOLUTION_CHUNK_FIXES": "0",
+                 "SOLUTION_COMPANY_TOP": "1"}
 SCENARIOS = ["normal", "fabricated", "reject_full", "reject_compact", "tiny", "transient", "no_dense"]
 _TIME_KEY = re.compile(r"(?i)time|elapsed|latency|_ms$|_sec$|seconds|^t_")
 
